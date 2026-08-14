@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
-import { auth, signOut } from '@/auth';
+import { auth } from '@/auth';
 import { getProfile, hasDatabase } from '@/lib/db';
-import { Button } from '@/components/ui/button';
+import { SiteHeader } from '@/components/site-header';
 
 export default async function Home() {
   const session = await auth();
@@ -11,22 +11,15 @@ export default async function Home() {
   if (hasDatabase && !profile?.displayName) redirect('/onboarding');
 
   return (
-    <main className="container flex min-h-dvh flex-col items-center justify-center gap-4">
-      <h1 className="text-3xl font-semibold tracking-tight">playbattle</h1>
-      <p className="text-sm text-muted-foreground">
-        hey {profile?.displayName ?? session.user.name}
-      </p>
+    <div className="min-h-dvh">
+      <SiteHeader />
 
-      <form
-        action={async () => {
-          'use server';
-          await signOut({ redirectTo: '/signin' });
-        }}
-      >
-        <Button type="submit" variant="ghost" size="sm">
-          sign out
-        </Button>
-      </form>
-    </main>
+      <main className="container py-10">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          hey {profile?.displayName ?? session.user.name}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">no games yet</p>
+      </main>
+    </div>
   );
 }
