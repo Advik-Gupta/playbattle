@@ -31,6 +31,9 @@ export function Keyboard({
     function handle(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
       if (event.key === 'Enter') onEnter();
       else if (event.key === 'Backspace') onBackspace();
       else if (/^[a-zA-Z]$/.test(event.key)) onKey(event.key.toLowerCase());

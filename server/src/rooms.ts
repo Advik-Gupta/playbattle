@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import {
   CONFIG_LIMITS,
   DEFAULT_CONFIG,
@@ -47,6 +47,7 @@ export interface Room {
   usedAnswers: string[];
   history: RoundSummary[];
   matchWinnerId: string | null;
+  matchId: string;
 }
 
 export type RoomResult = { ok: true; room: Room } | { ok: false; error: string };
@@ -123,6 +124,7 @@ export function createRoom(profile: PlayerProfile, socketId: string, config: Par
     usedAnswers: [],
     history: [],
     matchWinnerId: null,
+    matchId: randomUUID(),
   };
 
   room.players.set(profile.id, blankPlayer(profile, socketId));
@@ -354,7 +356,7 @@ export function submitGuess(code: string, userId: string, raw: string) {
 }
 
 export function roundIsOver(room: Room) {
-  const active = [...room.players.values()];
+  const active = [...room.players.values()].filter((player) => player.socketId !== null);
   if (active.length === 0) return true;
 
   return active.every(
@@ -406,6 +408,7 @@ export function rematch(code: string, userId: string) {
   room.history = [];
   room.usedAnswers = [];
   room.matchWinnerId = null;
+  room.matchId = randomUUID();
   resetBoards(room);
   for (const player of room.players.values()) {
     player.score = 0;

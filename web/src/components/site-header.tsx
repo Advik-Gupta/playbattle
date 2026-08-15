@@ -27,12 +27,19 @@ export async function SiteHeader() {
         </Link>
 
         <nav className="flex items-center gap-1 text-sm">
-          <Link
-            href="/play"
-            className="rounded-md px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            Play
-          </Link>
+          {[
+            { href: '/play', label: 'Play' },
+            { href: '/leaderboard', label: 'Leaderboard' },
+            { href: '/profile', label: 'Profile' },
+          ].map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="rounded-md px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              {item.label}
+            </Link>
+          ))}
         </nav>
 
         {session?.user && (

@@ -1,0 +1,37 @@
+import { NextResponse } from 'next/server';
+import { hasDatabase, recordMatch, type MatchInput } from '@/lib/db';
+
+const secret = process.env.INTERNAL_API_SECRET;
+
+export async function POST(request: Request) {
+  if (!secret || request.headers.get('x-internal-secret') !== secret) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  if (!hasDatabase) {
+    return NextResponse.json({ error: 'no database configured' }, { status: 503 });
+  }
+
+  let body: MatchInput;
+  try {
+    body = (await request.json()) as MatchInput;
+  } catch {
+    return NextResponse.json({ error: 'bad json' }, { status: 400 });
+  }
+
+  if (!body?.matchId || !Array.isArray(body.players) || body.players.length === 0) {
+    return NextResponse.json({ error: 'bad payload' }, { status: 400 });
+  }
+
+  const saved = await recordMatch({
+    matchId: body.matchId,
+    code: body.code ?? '',
+    players: body.players,
+    winnerId: body.winnerId ?? null,
+    rounds: Array.isArray(body.rounds) ? body.rounds : [],
+  });
+
+  if (!saved) return NextResponse.json({ error: 'save failed' }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}

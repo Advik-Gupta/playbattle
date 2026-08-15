@@ -12,6 +12,7 @@ import type {
   SocketData,
 } from './protocol.js';
 import type { Room } from './rooms.js';
+import { reportMatch } from './results.js';
 import {
   allRoomCodes,
   createRoom,
@@ -95,6 +96,7 @@ function finishRound(room: Room) {
     for (const { socketId, userId } of playerSockets(room)) {
       io.to(socketId).emit('game:matchEnd', serialize(room, userId));
     }
+    void reportMatch(room, room.matchId);
     return;
   }
 
@@ -189,11 +191,17 @@ io.on('connection', (socket) => {
     socket.data.roomCode = null;
     push(room);
     ack({ ok: true, data: null });
+
+    if (room && room.phase === 'playing' && roundIsOver(room)) finishRound(room);
   });
 
   socket.on('disconnect', () => {
     console.log('disconnected', profile.id, socket.id);
-    push(markDisconnected(socket.id));
+
+    const room = markDisconnected(socket.id);
+    push(room);
+
+    if (room && room.phase === 'playing' && roundIsOver(room)) finishRound(room);
   });
 });
 
