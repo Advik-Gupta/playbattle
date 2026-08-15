@@ -5,6 +5,25 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import { Server } from 'socket.io';
+import type {
+  ClientToServerEvents,
+  PlayerProfile,
+  ServerToClientEvents,
+  SocketData,
+} from './protocol.js';
+import type { Room } from './rooms.js';
+import {
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  markDisconnected,
+  openRooms,
+  roomCount,
+  serialize,
+  setConfig,
+  setReady,
+  sweepEmptyRooms,
+} from './rooms.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env') });
@@ -20,25 +39,103 @@ app.use(cors({ origin: origins, credentials: true }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, uptime: Math.round(process.uptime()) });
+  res.json({ ok: true, uptime: Math.round(process.uptime()), rooms: roomCount() });
+});
+
+app.get('/rooms', (_req, res) => {
+  res.json({ rooms: openRooms() });
 });
 
 const server = http.createServer(app);
-const io = new Server(server, {
+const io = new Server<ClientToServerEvents, ServerToClientEvents, never, SocketData>(server, {
   cors: { origin: origins, credentials: true },
 });
 
-io.on('connection', (socket) => {
-  console.log('connected', socket.id);
+function readProfile(raw: unknown): PlayerProfile | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { id, name } = raw as Record<string, unknown>;
+  if (typeof id !== 'string' || id.length === 0) return null;
+  return { id, name: typeof name === 'string' && name ? name.slice(0, 20) : 'player' };
+}
 
-  socket.on('ping', (ack) => {
-    if (typeof ack === 'function') ack({ ok: true, at: Date.now() });
+io.use((socket, next) => {
+  const profile = readProfile(socket.handshake.auth?.profile);
+  if (!profile) return next(new Error('missing profile'));
+
+  socket.data.profile = profile;
+  socket.data.roomCode = null;
+  next();
+});
+
+io.on('connection', (socket) => {
+  const profile = socket.data.profile as PlayerProfile;
+  console.log('connected', profile.id, socket.id);
+
+  const push = (room: Room | null) => {
+    if (!room) return;
+    io.to(room.code).emit('room:state', serialize(room));
+  };
+
+  socket.on('room:create', (config, ack) => {
+    const room = createRoom(profile, socket.id, config ?? {});
+    socket.join(room.code);
+    socket.data.roomCode = room.code;
+    push(room);
+    ack({ ok: true, data: { code: room.code } });
+  });
+
+  socket.on('room:join', (code, ack) => {
+    const result = joinRoom(String(code ?? '').trim(), profile, socket.id);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    socket.join(result.room.code);
+    socket.data.roomCode = result.room.code;
+    push(result.room);
+    ack({ ok: true, data: { code: result.room.code } });
+  });
+
+  socket.on('room:ready', (ready, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    push(setReady(code, profile.id, Boolean(ready)));
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('room:config', (config, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = setConfig(code, profile.id, config ?? {});
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    push(result.room);
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('room:leave', (ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: true, data: null });
+
+    const room = leaveRoom(code, profile.id);
+    socket.leave(code);
+    socket.data.roomCode = null;
+    push(room);
+    ack({ ok: true, data: null });
   });
 
   socket.on('disconnect', () => {
-    console.log('disconnected', socket.id);
+    console.log('disconnected', profile.id, socket.id);
+    push(markDisconnected(socket.id));
   });
 });
+
+setInterval(() => {
+  for (const code of sweepEmptyRooms()) {
+    io.to(code).emit('room:closed', 'room closed after being empty');
+    console.log('closed empty room', code);
+  }
+}, 30_000);
 
 server.listen(port, () => {
   console.log(`server on http://localhost:${port}`);

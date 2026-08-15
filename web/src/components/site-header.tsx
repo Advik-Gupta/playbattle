@@ -4,6 +4,7 @@ import { getProfile } from '@/lib/db';
 import { UserMenu } from '@/components/user-menu';
 import { ConnectionStatus } from '@/components/connection-status';
 import { Realtime } from '@/components/realtime';
+import { Toaster } from '@/components/toaster';
 
 export async function SiteHeader() {
   const session = await auth();
@@ -25,11 +26,21 @@ export async function SiteHeader() {
           <span className="text-[15px] font-semibold tracking-tight">playbattle</span>
         </Link>
 
+        <nav className="flex items-center gap-1 text-sm">
+          <Link
+            href="/play"
+            className="rounded-md px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            Play
+          </Link>
+        </nav>
+
         {session?.user && (
           <div className="flex items-center gap-4">
             <ConnectionStatus />
             <UserMenu name={name} signOutAction={handleSignOut} />
-            <Realtime />
+            <Realtime id={session.user.id} name={name} />
+            <Toaster />
           </div>
         )}
       </div>
