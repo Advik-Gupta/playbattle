@@ -6,6 +6,7 @@ import { CONFIG_LIMITS, type RoomConfig } from '@/lib/protocol';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { GameView } from '@/components/game-view';
 
 export function RoomPanel({ userId }: { userId: string }) {
   const socket = useSocket((s) => s.socket);
@@ -100,6 +101,16 @@ export function RoomPanel({ userId }: { userId: string }) {
     );
   }
 
+  if (room.phase !== 'lobby' && socket) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <GameView room={room} socket={socket} userId={userId} />
+        </CardContent>
+      </Card>
+    );
+  }
+
   const me = room.players.find((p) => p.profile.id === userId);
   const isHost = room.hostId === userId;
 
@@ -156,7 +167,7 @@ export function RoomPanel({ userId }: { userId: string }) {
         </div>
 
         {isHost && (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <Setting
               label="Rounds"
               value={room.config.rounds}
@@ -168,6 +179,12 @@ export function RoomPanel({ userId }: { userId: string }) {
               value={room.config.secondsPerRound}
               options={CONFIG_LIMITS.secondsPerRound}
               onChange={(secondsPerRound) => updateConfig({ secondsPerRound })}
+            />
+            <Setting
+              label="Guesses"
+              value={room.config.maxGuesses}
+              options={CONFIG_LIMITS.maxGuesses}
+              onChange={(maxGuesses) => updateConfig({ maxGuesses })}
             />
             <Setting
               label="Players"

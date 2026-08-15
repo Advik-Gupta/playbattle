@@ -13,16 +13,26 @@ import type {
 } from './protocol.js';
 import type { Room } from './rooms.js';
 import {
+  allRoomCodes,
   createRoom,
+  endRound,
+  everyoneReady,
+  getRoom,
   joinRoom,
   leaveRoom,
   markDisconnected,
   openRooms,
+  playerSockets,
+  rematch,
   roomCount,
+  roundIsOver,
   serialize,
   setConfig,
   setReady,
+  startRound,
+  submitGuess,
   sweepEmptyRooms,
+  timedOut,
 } from './rooms.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -67,14 +77,40 @@ io.use((socket, next) => {
   next();
 });
 
+const ROUND_BREAK = 5000;
+
+function push(room: Room | null) {
+  if (!room) return;
+  for (const { socketId, userId } of playerSockets(room)) {
+    io.to(socketId).emit('room:state', serialize(room, userId));
+  }
+}
+
+function finishRound(room: Room) {
+  const summary = endRound(room);
+  io.to(room.code).emit('game:roundEnd', summary);
+  push(room);
+
+  if (room.phase === 'match_over') {
+    for (const { socketId, userId } of playerSockets(room)) {
+      io.to(socketId).emit('game:matchEnd', serialize(room, userId));
+    }
+    return;
+  }
+
+  setTimeout(() => {
+    const live = getRoom(room.code);
+    if (!live || live.phase !== 'round_over') return;
+
+    startRound(live);
+    io.to(live.code).emit('game:roundStart', live.round);
+    push(live);
+  }, ROUND_BREAK);
+}
+
 io.on('connection', (socket) => {
   const profile = socket.data.profile as PlayerProfile;
   console.log('connected', profile.id, socket.id);
-
-  const push = (room: Room | null) => {
-    if (!room) return;
-    io.to(room.code).emit('room:state', serialize(room));
-  };
 
   socket.on('room:create', (config, ack) => {
     const room = createRoom(profile, socket.id, config ?? {});
@@ -98,7 +134,38 @@ io.on('connection', (socket) => {
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
 
-    push(setReady(code, profile.id, Boolean(ready)));
+    const room = setReady(code, profile.id, Boolean(ready));
+    if (room && room.phase === 'lobby' && everyoneReady(room)) {
+      startRound(room);
+      io.to(room.code).emit('game:roundStart', room.round);
+    }
+
+    push(room);
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('game:guess', (word, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = submitGuess(code, profile.id, word);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    socket.to(result.room.code).emit('game:opponentGuessed', profile.id);
+    push(result.room);
+    ack({ ok: true, data: null });
+
+    if (result.done) finishRound(result.room);
+  });
+
+  socket.on('room:rematch', (ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = rematch(code, profile.id);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    push(result.room);
     ack({ ok: true, data: null });
   });
 
@@ -129,6 +196,14 @@ io.on('connection', (socket) => {
     push(markDisconnected(socket.id));
   });
 });
+
+setInterval(() => {
+  for (const code of allRoomCodes()) {
+    const room = getRoom(code);
+    if (!room) continue;
+    if (timedOut(room) || (room.phase === 'playing' && roundIsOver(room))) finishRound(room);
+  }
+}, 1000);
 
 setInterval(() => {
   for (const code of sweepEmptyRooms()) {

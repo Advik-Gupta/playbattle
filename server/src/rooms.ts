@@ -4,12 +4,18 @@ import {
   DEFAULT_CONFIG,
   MAX_ROOM_PLAYERS,
   ROOM_CODE_LENGTH,
+  WORD_LENGTH,
+  type OwnGuess,
   type PlayerProfile,
   type PlayerView,
   type RoomConfig,
   type RoomPhase,
   type RoomState,
+  type RoundSummary,
+  type Tile,
 } from './protocol.js';
+import { mergeKeyboard, pointsFor, scoreGuess, solved } from './game.js';
+import { isWord, randomWord } from './words.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const EMPTY_ROOM_TTL = 3 * 60 * 1000;
@@ -20,6 +26,11 @@ interface Player {
   ready: boolean;
   score: number;
   leftAt: number | null;
+  guesses: OwnGuess[];
+  keyboard: Record<string, Tile>;
+  solved: boolean;
+  solveMs: number | null;
+  place: number | null;
 }
 
 export interface Room {
@@ -31,6 +42,11 @@ export interface Room {
   players: Map<string, Player>;
   deadline: number | null;
   emptySince: number | null;
+  answer: string | null;
+  roundStartedAt: number | null;
+  usedAnswers: string[];
+  history: RoundSummary[];
+  matchWinnerId: string | null;
 }
 
 export type RoomResult = { ok: true; room: Room } | { ok: false; error: string };
@@ -57,9 +73,35 @@ export function sanitizeConfig(input: Partial<RoomConfig> = {}): RoomConfig {
       input.secondsPerRound,
       DEFAULT_CONFIG.secondsPerRound,
     ),
+    maxGuesses: pick(CONFIG_LIMITS.maxGuesses, input.maxGuesses, DEFAULT_CONFIG.maxGuesses),
     maxPlayers: pick(CONFIG_LIMITS.maxPlayers, input.maxPlayers, DEFAULT_CONFIG.maxPlayers),
     visibility: input.visibility === 'open' ? 'open' : DEFAULT_CONFIG.visibility,
   };
+}
+
+function blankPlayer(profile: PlayerProfile, socketId: string | null): Player {
+  return {
+    profile,
+    socketId,
+    ready: false,
+    score: 0,
+    leftAt: null,
+    guesses: [],
+    keyboard: {},
+    solved: false,
+    solveMs: null,
+    place: null,
+  };
+}
+
+function resetBoards(room: Room) {
+  for (const player of room.players.values()) {
+    player.guesses = [];
+    player.keyboard = {};
+    player.solved = false;
+    player.solveMs = null;
+    player.place = null;
+  }
 }
 
 export function getRoom(code: string): Room | undefined {
@@ -76,15 +118,14 @@ export function createRoom(profile: PlayerProfile, socketId: string, config: Par
     players: new Map(),
     deadline: null,
     emptySince: null,
+    answer: null,
+    roundStartedAt: null,
+    usedAnswers: [],
+    history: [],
+    matchWinnerId: null,
   };
 
-  room.players.set(profile.id, {
-    profile,
-    socketId,
-    ready: false,
-    score: 0,
-    leftAt: null,
-  });
+  room.players.set(profile.id, blankPlayer(profile, socketId));
 
   rooms.set(room.code, room);
   return room;
@@ -112,13 +153,7 @@ export function joinRoom(
   const seats = Math.min(room.config.maxPlayers, MAX_ROOM_PLAYERS);
   if (room.players.size >= seats) return { ok: false, error: 'room is full' };
 
-  room.players.set(profile.id, {
-    profile,
-    socketId,
-    ready: false,
-    score: 0,
-    leftAt: null,
-  });
+  room.players.set(profile.id, blankPlayer(profile, socketId));
   room.emptySince = null;
 
   return { ok: true, room };
@@ -171,6 +206,10 @@ export function setReady(code: string, userId: string, ready: boolean) {
   return room;
 }
 
+export function timedOut(room: Room) {
+  return room.phase === 'playing' && room.deadline !== null && room.deadline <= Date.now();
+}
+
 export function setConfig(
   code: string,
   userId: string,
@@ -198,13 +237,30 @@ export function openRooms() {
     }));
 }
 
-export function serialize(room: Room): RoomState {
-  const players: PlayerView[] = [...room.players.values()].map((player) => ({
-    profile: player.profile,
-    connected: player.socketId !== null,
-    ready: player.ready,
-    score: player.score,
-  }));
+export function serialize(room: Room, viewerId: string): RoomState {
+  const viewer = room.players.get(viewerId);
+  const roundDone = room.phase === 'round_over' || room.phase === 'match_over';
+  const viewerFinished =
+    viewer !== undefined &&
+    (viewer.solved || viewer.guesses.length >= room.config.maxGuesses);
+
+  const players: PlayerView[] = [...room.players.values()].map((player) => {
+    const own = player.profile.id === viewerId;
+
+    return {
+      profile: player.profile,
+      connected: player.socketId !== null,
+      ready: player.ready,
+      score: player.score,
+      guesses: own || roundDone ? player.guesses : null,
+      maskedGuesses: player.guesses.map((guess) => ({ tiles: guess.tiles })),
+      keyboard: own ? player.keyboard : null,
+      solved: player.solved,
+      solveMs: player.solveMs,
+      outOfGuesses: player.guesses.length >= room.config.maxGuesses,
+      place: player.place,
+    };
+  });
 
   return {
     code: room.code,
@@ -215,7 +271,16 @@ export function serialize(room: Room): RoomState {
     players,
     deadline: room.deadline,
     now: Date.now(),
+    history: room.history,
+    answer: roundDone || viewerFinished ? room.answer : null,
+    matchWinnerId: room.matchWinnerId,
   };
+}
+
+export function playerSockets(room: Room) {
+  return [...room.players.values()]
+    .filter((player) => player.socketId !== null)
+    .map((player) => ({ socketId: player.socketId as string, userId: player.profile.id }));
 }
 
 export function sweepEmptyRooms() {
@@ -232,6 +297,120 @@ export function sweepEmptyRooms() {
   return closed;
 }
 
+export function allRoomCodes() {
+  return [...rooms.keys()];
+}
+
 export function roomCount() {
   return rooms.size;
+}
+
+export function everyoneReady(room: Room) {
+  const active = [...room.players.values()].filter((p) => p.socketId !== null);
+  return active.length >= 2 && active.every((p) => p.ready);
+}
+
+export function startRound(room: Room) {
+  room.round += 1;
+  room.answer = randomWord(room.usedAnswers);
+  room.usedAnswers.push(room.answer);
+  room.phase = 'playing';
+  room.roundStartedAt = Date.now();
+  room.deadline =
+    room.config.secondsPerRound > 0 ? Date.now() + room.config.secondsPerRound * 1000 : null;
+
+  resetBoards(room);
+  return room;
+}
+
+export function submitGuess(code: string, userId: string, raw: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
+
+  const player = room.players.get(userId);
+  if (!player) return { ok: false, error: 'not in this room' } as const;
+  if (player.solved) return { ok: false, error: 'already solved' } as const;
+  if (player.guesses.length >= room.config.maxGuesses) {
+    return { ok: false, error: 'out of guesses' } as const;
+  }
+
+  const word = String(raw ?? '').trim().toLowerCase();
+  if (word.length !== WORD_LENGTH) return { ok: false, error: 'needs five letters' } as const;
+  if (!isWord(word)) return { ok: false, error: 'not in the word list' } as const;
+
+  const tiles = scoreGuess(word, room.answer as string);
+  player.guesses.push({ word, tiles });
+  player.keyboard = mergeKeyboard(player.keyboard, word, tiles);
+
+  if (solved(tiles)) {
+    player.solved = true;
+    player.solveMs = Date.now() - (room.roundStartedAt ?? Date.now());
+    player.place = [...room.players.values()].filter((p) => p.solved).length;
+    player.score += pointsFor(player.place, player.guesses.length);
+  }
+
+  return { ok: true, room, done: roundIsOver(room) } as const;
+}
+
+export function roundIsOver(room: Room) {
+  const active = [...room.players.values()];
+  if (active.length === 0) return true;
+
+  return active.every(
+    (player) => player.solved || player.guesses.length >= room.config.maxGuesses,
+  );
+}
+
+export function endRound(room: Room): RoundSummary {
+  const winner = [...room.players.values()]
+    .filter((p) => p.solved)
+    .sort((a, b) => (a.solveMs ?? 0) - (b.solveMs ?? 0))[0];
+
+  const summary: RoundSummary = {
+    round: room.round,
+    answer: room.answer ?? '',
+    winnerId: winner?.profile.id ?? null,
+    boards: [...room.players.values()].map((player) => ({
+      playerId: player.profile.id,
+      guesses: player.guesses,
+      solved: player.solved,
+      solveMs: player.solveMs,
+    })),
+  };
+
+  room.history.push(summary);
+  room.deadline = null;
+
+  if (room.round >= room.config.rounds) {
+    room.phase = 'match_over';
+    const ranked = [...room.players.values()].sort((a, b) => b.score - a.score);
+    const tied = ranked.length > 1 && ranked[0].score === ranked[1].score;
+    room.matchWinnerId = tied ? null : (ranked[0]?.profile.id ?? null);
+  } else {
+    room.phase = 'round_over';
+  }
+
+  return summary;
+}
+
+export function rematch(code: string, userId: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.phase !== 'match_over') return { ok: false, error: 'match still running' } as const;
+  if (room.hostId !== userId) return { ok: false, error: 'only the host can restart' } as const;
+
+  room.phase = 'lobby';
+  room.round = 0;
+  room.answer = null;
+  room.history = [];
+  room.usedAnswers = [];
+  room.matchWinnerId = null;
+  resetBoards(room);
+  for (const player of room.players.values()) {
+    player.score = 0;
+    player.ready = false;
+  }
+
+  return { ok: true, room } as const;
 }
