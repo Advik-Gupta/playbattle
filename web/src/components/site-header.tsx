@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { auth, signOut } from '@/auth';
 import { getProfile } from '@/lib/db';
 import { UserMenu } from '@/components/user-menu';
+import { ConnectionStatus } from '@/components/connection-status';
+import { Realtime } from '@/components/realtime';
 
 export async function SiteHeader() {
   const session = await auth();
@@ -23,7 +25,13 @@ export async function SiteHeader() {
           <span className="text-[15px] font-semibold tracking-tight">playbattle</span>
         </Link>
 
-        {session?.user && <UserMenu name={name} signOutAction={handleSignOut} />}
+        {session?.user && (
+          <div className="flex items-center gap-4">
+            <ConnectionStatus />
+            <UserMenu name={name} signOutAction={handleSignOut} />
+            <Realtime />
+          </div>
+        )}
       </div>
     </header>
   );

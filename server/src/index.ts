@@ -31,6 +31,10 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   console.log('connected', socket.id);
 
+  socket.on('ping', (ack) => {
+    if (typeof ack === 'function') ack({ ok: true, at: Date.now() });
+  });
+
   socket.on('disconnect', () => {
     console.log('disconnected', socket.id);
   });
