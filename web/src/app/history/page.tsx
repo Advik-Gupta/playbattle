@@ -32,18 +32,42 @@ export default async function HistoryPage({
 
         {pages > 1 && (
           <div className="mt-6 flex items-center justify-between">
-            <Button asChild variant="outline" size="sm" disabled={page <= 1}>
-              <Link href={`/history?page=${Math.max(1, page - 1)}`}>Previous</Link>
-            </Button>
+            <PageLink href={`/history?page=${page - 1}`} disabled={page <= 1}>
+              Previous
+            </PageLink>
             <span className="text-sm text-muted-foreground">
               Page {page} of {pages}
             </span>
-            <Button asChild variant="outline" size="sm" disabled={page >= pages}>
-              <Link href={`/history?page=${Math.min(pages, page + 1)}`}>Next</Link>
-            </Button>
+            <PageLink href={`/history?page=${page + 1}`} disabled={page >= pages}>
+              Next
+            </PageLink>
           </div>
         )}
       </main>
     </div>
+  );
+}
+
+function PageLink({
+  href,
+  disabled,
+  children,
+}: {
+  href: string;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  if (disabled) {
+    return (
+      <Button variant="outline" size="sm" disabled>
+        {children}
+      </Button>
+    );
+  }
+
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link href={href}>{children}</Link>
+    </Button>
   );
 }

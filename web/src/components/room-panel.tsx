@@ -20,6 +20,16 @@ export function RoomPanel({ userId }: { userId: string }) {
 
   const offline = status !== 'online' || !socket;
 
+  function solo() {
+    if (!socket) return;
+    setBusy(true);
+    setError('');
+    socket.emit('room:solo', {}, (res) => {
+      setBusy(false);
+      if (!res.ok) setError(res.error);
+    });
+  }
+
   function create() {
     if (!socket) return;
     setBusy(true);
@@ -75,6 +85,15 @@ export function RoomPanel({ userId }: { userId: string }) {
 
           <Button onClick={create} disabled={offline || busy} className="w-full">
             Create room
+          </Button>
+
+          <Button
+            onClick={solo}
+            variant="outline"
+            disabled={offline || busy}
+            className="w-full"
+          >
+            Play solo
           </Button>
 
           <div className="flex items-center gap-2">

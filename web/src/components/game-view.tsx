@@ -1,14 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { WORD_LENGTH, type RoomState } from '@/lib/protocol';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { MAX_HINTS, WORD_LENGTH, type RoomState } from '@/lib/protocol';
 import { useSocket, type GameSocket } from '@/lib/socket';
 import { Board, MiniBoard } from '@/components/board';
 import { Keyboard } from '@/components/keyboard';
 import { Button } from '@/components/ui/button';
 
-function useCountdown(deadline: number | null, offset: number) {
+function useCountdown(deadline: number | null, serverNow: number) {
   const [left, setLeft] = useState<number | null>(null);
+  const offset = useRef(0);
+
+  useEffect(() => {
+    offset.current = serverNow - Date.now();
+  }, [serverNow]);
 
   useEffect(() => {
     if (deadline === null) {
@@ -16,12 +21,13 @@ function useCountdown(deadline: number | null, offset: number) {
       return;
     }
 
-    const tick = () => setLeft(Math.max(0, Math.round((deadline - Date.now() - offset) / 1000)));
+    const tick = () =>
+      setLeft(Math.max(0, Math.round((deadline - Date.now() - offset.current) / 1000)));
     tick();
 
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
-  }, [deadline, offset]);
+  }, [deadline]);
 
   return left;
 }
@@ -42,7 +48,9 @@ export function GameView({
   const me = room.players.find((p) => p.profile.id === userId);
   const others = room.players.filter((p) => p.profile.id !== userId);
   const locked = room.phase !== 'playing' || Boolean(me?.solved) || Boolean(me?.outOfGuesses);
-  const seconds = useCountdown(room.deadline, room.now - Date.now());
+  const seconds = useCountdown(room.deadline, room.now);
+  const isSolo = room.config.mode === 'solo';
+  const hintsLeft = MAX_HINTS - (me?.hints?.length ?? 0);
 
   useEffect(() => {
     setDraft('');
@@ -79,7 +87,7 @@ export function GameView({
     <div className="space-y-6">
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium">
-          Round {room.round} of {room.config.rounds}
+          {isSolo ? 'Solo' : `Round ${room.round} of ${room.config.rounds}`}
         </span>
         {seconds !== null && (
           <span className="font-mono tabular-nums text-muted-foreground">
@@ -98,6 +106,38 @@ export function GameView({
         </div>
 
         <div className="flex-1 space-y-4">
+          {isSolo && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                {(me?.hints ?? []).map((hint) => (
+                  <span
+                    key={hint.index}
+                    className="rounded-md bg-amber-500/15 px-2 py-1 text-xs font-medium text-amber-600"
+                  >
+                    letter {hint.index + 1} is {hint.letter.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={locked || hintsLeft <= 0}
+                onClick={() =>
+                  socket.emit('game:hint', (res) => {
+                    if (!res.ok) setError(res.error);
+                  })
+                }
+              >
+                {hintsLeft > 0 ? `Hint (${hintsLeft} left)` : 'No hints left'}
+              </Button>
+
+              <p className="text-xs text-muted-foreground">
+                Hints break your streak for this word.
+              </p>
+            </div>
+          )}
+
           {others.map((player) => (
             <div key={player.profile.id} className="space-y-1.5">
               <div className="flex items-center justify-between text-sm">
@@ -124,15 +164,28 @@ export function GameView({
       {room.phase === 'match_over' ? (
         <div className="space-y-3 text-center">
           <p className="text-lg font-semibold">
-            {room.matchWinnerId === null
-              ? 'Draw'
-              : room.matchWinnerId === userId
-                ? 'You win'
-                : `${room.players.find((p) => p.profile.id === room.matchWinnerId)?.profile.name} wins`}
+            {isSolo
+              ? me?.solved
+                ? 'Solved it'
+                : 'Better luck next word'
+              : room.matchWinnerId === null
+                ? 'Draw'
+                : room.matchWinnerId === userId
+                  ? 'You win'
+                  : `${room.players.find((p) => p.profile.id === room.matchWinnerId)?.profile.name} wins`}
           </p>
           <div className="flex justify-center gap-2">
             {room.hostId === userId && (
-              <Button onClick={() => socket.emit('room:rematch', () => undefined)}>Rematch</Button>
+              <Button
+                onClick={() =>
+                  socket.emit('room:rematch', (res) => {
+                    if (!res.ok) setError(res.error);
+                    else if (isSolo) socket.emit('room:ready', true, () => undefined);
+                  })
+                }
+              >
+                {isSolo ? 'New word' : 'Rematch'}
+              </Button>
             )}
             <Button
               variant="outline"

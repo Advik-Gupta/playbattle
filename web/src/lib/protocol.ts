@@ -4,7 +4,10 @@ export type RoomPhase = 'lobby' | 'playing' | 'round_over' | 'match_over';
 
 export const WORD_LENGTH = 5;
 
+export type GameMode = 'race' | 'solo';
+
 export interface RoomConfig {
+  mode: GameMode;
   rounds: number;
   secondsPerRound: number;
   maxGuesses: number;
@@ -13,6 +16,7 @@ export interface RoomConfig {
 }
 
 export const DEFAULT_CONFIG: RoomConfig = {
+  mode: 'race',
   rounds: 3,
   secondsPerRound: 120,
   maxGuesses: 6,
@@ -27,12 +31,28 @@ export const CONFIG_LIMITS = {
   maxPlayers: [2, 3, 4],
 } as const;
 
+export const SOLO_CONFIG: RoomConfig = {
+  mode: 'solo',
+  rounds: 1,
+  secondsPerRound: 0,
+  maxGuesses: 6,
+  maxPlayers: 1,
+  visibility: 'private',
+};
+
+export const MAX_HINTS = 2;
+
 export const ROOM_CODE_LENGTH = 5;
 export const MAX_ROOM_PLAYERS = 4;
 
 export interface PlayerProfile {
   id: string;
   name: string;
+}
+
+export interface HintReveal {
+  index: number;
+  letter: string;
 }
 
 export interface OwnGuess {
@@ -56,6 +76,7 @@ export interface PlayerView {
   solveMs: number | null;
   outOfGuesses: boolean;
   place: number | null;
+  hints: HintReveal[] | null;
 }
 
 export interface RevealedBoard {
@@ -63,6 +84,7 @@ export interface RevealedBoard {
   guesses: OwnGuess[];
   solved: boolean;
   solveMs: number | null;
+  hints: number;
 }
 
 export interface RoundSummary {
@@ -90,6 +112,8 @@ export type Ack<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export interface ClientToServerEvents {
   'room:create': (config: Partial<RoomConfig>, ack: (res: Ack<{ code: string }>) => void) => void;
+  'room:solo': (config: Partial<RoomConfig>, ack: (res: Ack<{ code: string }>) => void) => void;
+  'game:hint': (ack: (res: Ack<HintReveal>) => void) => void;
   'room:join': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
   'room:leave': (ack: (res: Ack<null>) => void) => void;
   'room:ready': (ready: boolean, ack: (res: Ack<null>) => void) => void;

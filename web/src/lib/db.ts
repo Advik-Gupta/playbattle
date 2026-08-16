@@ -28,12 +28,31 @@ export const EMPTY_STATS: Stats = {
   points: 0,
 };
 
+export interface SoloStats {
+  played: number;
+  solves: number;
+  guesses: number;
+  streak: number;
+  bestStreak: number;
+  hints: number;
+}
+
+export const EMPTY_SOLO: SoloStats = {
+  played: 0,
+  solves: 0,
+  guesses: 0,
+  streak: 0,
+  bestStreak: 0,
+  hints: 0,
+};
+
 export interface Profile {
   userId: string;
   email: string;
   name: string;
   displayName: string;
   stats: Stats;
+  solo: SoloStats;
   createdAt?: Date;
 }
 
@@ -46,12 +65,14 @@ export interface MatchRound {
     words: string[];
     solved: boolean;
     solveMs: number | null;
+    hints: number;
   }[];
 }
 
 export interface MatchRecord {
   matchId: string;
   code: string;
+  mode: 'race' | 'solo';
   players: { userId: string; name: string; score: number }[];
   winnerId: string | null;
   rounds: MatchRound[];
@@ -75,6 +96,14 @@ const userSchema = new Schema(
       bestStreak: { type: Number, default: 0 },
       points: { type: Number, default: 0 },
     },
+    solo: {
+      played: { type: Number, default: 0 },
+      solves: { type: Number, default: 0 },
+      guesses: { type: Number, default: 0 },
+      streak: { type: Number, default: 0 },
+      bestStreak: { type: Number, default: 0 },
+      hints: { type: Number, default: 0 },
+    },
   },
   { collection: 'users', timestamps: true },
 );
@@ -83,6 +112,7 @@ const matchSchema = new Schema(
   {
     matchId: { type: String, required: true, unique: true, index: true },
     code: { type: String, default: '' },
+    mode: { type: String, default: 'race', index: true },
     players: [
       {
         _id: false,
@@ -134,6 +164,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
 
   const profile = plain(doc);
   profile.stats = { ...EMPTY_STATS, ...(profile.stats ?? {}) };
+  profile.solo = { ...EMPTY_SOLO, ...(profile.solo ?? {}) };
   return profile;
 }
 
@@ -155,6 +186,7 @@ export async function saveProfile(
 export interface MatchInput {
   matchId: string;
   code: string;
+  mode: 'race' | 'solo';
   players: { userId: string; name: string; score: number }[];
   winnerId: string | null;
   rounds: MatchRound[];
@@ -169,15 +201,44 @@ export async function recordMatch(input: MatchInput): Promise<boolean> {
   await MatchModel.create({ ...input, playedAt: new Date().toISOString() });
 
   for (const player of input.players) {
-    const rounds = input.rounds.filter((round) =>
-      round.boards.some((board) => board.playerId === player.userId),
-    );
-    const boards = rounds
+    const boards = input.rounds
       .map((round) => round.boards.find((board) => board.playerId === player.userId))
       .filter((board): board is MatchRound['boards'][number] => Boolean(board));
 
-    const won = input.winnerId === player.userId;
+    if (boards.length === 0) continue;
+
     const profile = await getProfile(player.userId);
+    const solves = boards.filter((board) => board.solved).length;
+    const guesses = boards.reduce((total, board) => total + board.words.length, 0);
+
+    if (input.mode === 'solo') {
+      const cleanSolve = boards.every((board) => board.solved && board.hints === 0);
+      const streak = cleanSolve ? (profile?.solo.streak ?? 0) + 1 : 0;
+
+      await UserModel.updateOne(
+        { userId: player.userId },
+        {
+          $inc: {
+            'solo.played': 1,
+            'solo.solves': solves,
+            'solo.guesses': guesses,
+            'solo.hints': boards.reduce((total, board) => total + board.hints, 0),
+          },
+          $set: {
+            'solo.streak': streak,
+            'solo.bestStreak': Math.max(streak, profile?.solo.bestStreak ?? 0),
+          },
+        },
+        { upsert: true },
+      ).exec();
+
+      continue;
+    }
+
+    const rounds = input.rounds.filter((round) =>
+      round.boards.some((board) => board.playerId === player.userId),
+    );
+    const won = input.winnerId === player.userId;
     const streak = won ? (profile?.stats.streak ?? 0) + 1 : 0;
 
     await UserModel.updateOne(
@@ -188,8 +249,8 @@ export async function recordMatch(input: MatchInput): Promise<boolean> {
           'stats.won': won ? 1 : 0,
           'stats.rounds': rounds.length,
           'stats.roundsWon': rounds.filter((round) => round.winnerId === player.userId).length,
-          'stats.solves': boards.filter((board) => board.solved).length,
-          'stats.guesses': boards.reduce((total, board) => total + board.words.length, 0),
+          'stats.solves': solves,
+          'stats.guesses': guesses,
           'stats.points': player.score,
         },
         $set: {
@@ -207,7 +268,7 @@ export async function recordMatch(input: MatchInput): Promise<boolean> {
 export async function recentMatches(userId: string, limit = 5): Promise<MatchRecord[]> {
   if (!(await connect())) return [];
 
-  const docs = await MatchModel.find({ 'players.userId': userId })
+  const docs = await MatchModel.find({ 'players.userId': userId, mode: 'race' })
     .sort({ playedAt: -1 })
     .limit(limit)
     .lean<MatchRecord[]>()
@@ -250,6 +311,7 @@ export async function leaderboard(limit = 20): Promise<Profile[]> {
   return docs.map((doc) => {
     const profile = plain(doc);
     profile.stats = { ...EMPTY_STATS, ...(profile.stats ?? {}) };
+    profile.solo = { ...EMPTY_SOLO, ...(profile.solo ?? {}) };
     return profile;
   });
 }

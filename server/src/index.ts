@@ -16,6 +16,7 @@ import { reportMatch } from './results.js';
 import {
   allRoomCodes,
   createRoom,
+  createSolo,
   endRound,
   everyoneReady,
   getRoom,
@@ -32,6 +33,7 @@ import {
   setReady,
   startRound,
   submitGuess,
+  takeHint,
   sweepEmptyRooms,
   timedOut,
 } from './rooms.js';
@@ -114,7 +116,20 @@ io.on('connection', (socket) => {
   const profile = socket.data.profile as PlayerProfile;
   console.log('connected', profile.id, socket.id);
 
+  const exitCurrent = () => {
+    const code = socket.data.roomCode;
+    if (!code) return;
+
+    const previous = leaveRoom(code, profile.id);
+    socket.leave(code);
+    socket.data.roomCode = null;
+    push(previous);
+
+    if (previous && previous.phase === 'playing' && roundIsOver(previous)) finishRound(previous);
+  };
+
   socket.on('room:create', (config, ack) => {
+    exitCurrent();
     const room = createRoom(profile, socket.id, config ?? {});
     socket.join(room.code);
     socket.data.roomCode = room.code;
@@ -122,9 +137,32 @@ io.on('connection', (socket) => {
     ack({ ok: true, data: { code: room.code } });
   });
 
+  socket.on('room:solo', (config, ack) => {
+    exitCurrent();
+    const room = createSolo(profile, socket.id, config ?? {});
+    socket.join(room.code);
+    socket.data.roomCode = room.code;
+    push(room);
+    socket.emit('game:roundStart', room.round);
+    ack({ ok: true, data: { code: room.code } });
+  });
+
+  socket.on('game:hint', (ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = takeHint(code, profile.id);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    push(result.room);
+    ack({ ok: true, data: result.hint });
+  });
+
   socket.on('room:join', (code, ack) => {
     const result = joinRoom(String(code ?? '').trim(), profile, socket.id);
     if (!result.ok) return ack({ ok: false, error: result.error });
+
+    if (socket.data.roomCode && socket.data.roomCode !== result.room.code) exitCurrent();
 
     socket.join(result.room.code);
     socket.data.roomCode = result.room.code;
@@ -183,16 +221,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:leave', (ack) => {
-    const code = socket.data.roomCode;
-    if (!code) return ack({ ok: true, data: null });
-
-    const room = leaveRoom(code, profile.id);
-    socket.leave(code);
-    socket.data.roomCode = null;
-    push(room);
+    exitCurrent();
     ack({ ok: true, data: null });
-
-    if (room && room.phase === 'playing' && roundIsOver(room)) finishRound(room);
   });
 
   socket.on('disconnect', () => {

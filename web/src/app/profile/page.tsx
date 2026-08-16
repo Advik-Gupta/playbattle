@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/auth';
-import { EMPTY_STATS, getProfile, recentMatches } from '@/lib/db';
+import { EMPTY_SOLO, EMPTY_STATS, getProfile, recentMatches } from '@/lib/db';
 import { MatchHistory } from '@/components/match-history';
 import { SiteHeader } from '@/components/site-header';
 import { StatTile } from '@/components/stat-tile';
@@ -17,6 +17,7 @@ export default async function ProfilePage() {
   ]);
 
   const stats = profile?.stats ?? EMPTY_STATS;
+  const solo = profile?.solo ?? EMPTY_SOLO;
   const winRate = stats.played > 0 ? Math.round((stats.won / stats.played) * 100) : 0;
   const avgGuesses = stats.solves > 0 ? (stats.guesses / stats.solves).toFixed(1) : '-';
 
@@ -46,6 +47,16 @@ export default async function ProfilePage() {
           <StatTile label="Words solved" value={String(stats.solves)} />
           <StatTile label="Avg guesses" value={avgGuesses} />
           <StatTile label="Best streak" value={String(stats.bestStreak)} />
+        </div>
+
+        <div className="mt-10">
+          <h2 className="mb-3 text-lg font-semibold tracking-tight">Solo</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatTile label="Played" value={String(solo.played)} />
+            <StatTile label="Solved" value={String(solo.solves)} />
+            <StatTile label="Streak" value={String(solo.streak)} />
+            <StatTile label="Best" value={String(solo.bestStreak)} />
+          </div>
         </div>
 
         <div className="mt-10">

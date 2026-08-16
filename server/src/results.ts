@@ -12,6 +12,7 @@ export async function reportMatch(room: Room, matchId: string) {
   const payload = {
     matchId,
     code: room.code,
+    mode: room.config.mode,
     players: [...room.players.values()].map((player) => ({
       userId: player.profile.id,
       name: player.profile.name,
@@ -27,6 +28,7 @@ export async function reportMatch(room: Room, matchId: string) {
         words: board.guesses.map((guess) => guess.word),
         solved: board.solved,
         solveMs: board.solveMs,
+        hints: board.hints,
       })),
     })),
   };

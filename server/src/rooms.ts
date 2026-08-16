@@ -2,9 +2,12 @@ import { randomInt, randomUUID } from 'node:crypto';
 import {
   CONFIG_LIMITS,
   DEFAULT_CONFIG,
+  MAX_HINTS,
   MAX_ROOM_PLAYERS,
   ROOM_CODE_LENGTH,
+  SOLO_CONFIG,
   WORD_LENGTH,
+  type HintReveal,
   type OwnGuess,
   type PlayerProfile,
   type PlayerView,
@@ -31,6 +34,7 @@ interface Player {
   solved: boolean;
   solveMs: number | null;
   place: number | null;
+  hints: HintReveal[];
 }
 
 export interface Room {
@@ -67,7 +71,10 @@ function pick<T extends number>(allowed: readonly T[], value: unknown, fallback:
 }
 
 export function sanitizeConfig(input: Partial<RoomConfig> = {}): RoomConfig {
+  if (input.mode === 'solo') return { ...SOLO_CONFIG };
+
   return {
+    mode: 'race',
     rounds: pick(CONFIG_LIMITS.rounds, input.rounds, DEFAULT_CONFIG.rounds),
     secondsPerRound: pick(
       CONFIG_LIMITS.secondsPerRound,
@@ -92,6 +99,7 @@ function blankPlayer(profile: PlayerProfile, socketId: string | null): Player {
     solved: false,
     solveMs: null,
     place: null,
+    hints: [],
   };
 }
 
@@ -102,6 +110,7 @@ function resetBoards(room: Room) {
     player.solved = false;
     player.solveMs = null;
     player.place = null;
+    player.hints = [];
   }
 }
 
@@ -261,6 +270,7 @@ export function serialize(room: Room, viewerId: string): RoomState {
       solveMs: player.solveMs,
       outOfGuesses: player.guesses.length >= room.config.maxGuesses,
       place: player.place,
+      hints: own ? player.hints : null,
     };
   });
 
@@ -309,7 +319,39 @@ export function roomCount() {
 
 export function everyoneReady(room: Room) {
   const active = [...room.players.values()].filter((p) => p.socketId !== null);
-  return active.length >= 2 && active.every((p) => p.ready);
+  const needed = room.config.mode === 'solo' ? 1 : 2;
+  return active.length >= needed && active.every((p) => p.ready);
+}
+
+export function createSolo(profile: PlayerProfile, socketId: string, config: Partial<RoomConfig>) {
+  const room = createRoom(profile, socketId, { ...config, mode: 'solo' });
+  startRound(room);
+  return room;
+}
+
+export function takeHint(code: string, userId: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.config.mode !== 'solo') return { ok: false, error: 'hints are solo only' } as const;
+  if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
+
+  const player = room.players.get(userId);
+  if (!player) return { ok: false, error: 'not in this room' } as const;
+  if (player.solved) return { ok: false, error: 'already solved' } as const;
+  if (player.hints.length >= MAX_HINTS) return { ok: false, error: 'no hints left' } as const;
+
+  const answer = room.answer ?? '';
+  const taken = new Set(player.hints.map((hint) => hint.index));
+  const options = [...answer]
+    .map((letter, index) => ({ index, letter }))
+    .filter((slot) => !taken.has(slot.index));
+
+  if (options.length === 0) return { ok: false, error: 'nothing left to reveal' } as const;
+
+  const hint = options[randomInt(options.length)];
+  player.hints.push(hint);
+
+  return { ok: true, room, hint } as const;
 }
 
 export function startRound(room: Room) {
@@ -378,6 +420,7 @@ export function endRound(room: Room): RoundSummary {
       guesses: player.guesses,
       solved: player.solved,
       solveMs: player.solveMs,
+      hints: player.hints.length,
     })),
   };
 
