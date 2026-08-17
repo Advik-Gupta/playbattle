@@ -70,6 +70,7 @@ export interface PlayerView {
   ready: boolean;
   score: number;
   guesses: OwnGuess[] | null;
+  resigned: boolean;
   maskedGuesses: MaskedGuess[];
   keyboard: Record<string, Tile> | null;
   solved: boolean;
@@ -106,7 +107,27 @@ export interface RoomState {
   history: RoundSummary[];
   answer: string | null;
   matchWinnerId: string | null;
+  votekicks: VoteKick[];
 }
+
+export interface VoteKick {
+  targetId: string;
+  targetName: string;
+  votes: string[];
+  required: number;
+  expiresAt: number;
+}
+
+export interface OpenRoom {
+  code: string;
+  hostName: string;
+  players: number;
+  maxPlayers: number;
+  rounds: number;
+  secondsPerRound: number;
+}
+
+export const VOTEKICK_MS = 45_000;
 
 export type PresenceStatus = 'offline' | 'online' | 'playing';
 
@@ -146,6 +167,11 @@ export interface ClientToServerEvents {
   'presence:ping': (ack: (res: Ack<null>) => void) => void;
   'invite:send': (toUserId: string, ack: (res: Ack<null>) => void) => void;
   'chat:send': (text: string, ack: (res: Ack<null>) => void) => void;
+  'room:quickmatch': (ack: (res: Ack<{ code: string; waiting: boolean }>) => void) => void;
+  'room:cancelQuickmatch': (ack: (res: Ack<null>) => void) => void;
+  'room:votekick': (targetId: string, ack: (res: Ack<null>) => void) => void;
+  'room:remove': (targetId: string, ack: (res: Ack<null>) => void) => void;
+  'game:skip': (ack: (res: Ack<null>) => void) => void;
   'room:join': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
   'room:leave': (ack: (res: Ack<null>) => void) => void;
   'room:ready': (ready: boolean, ack: (res: Ack<null>) => void) => void;
@@ -166,6 +192,8 @@ export interface ServerToClientEvents {
   'chat:message': (message: ChatMessage) => void;
   'chat:history': (messages: ChatMessage[]) => void;
   'session:replaced': () => void;
+  'room:removed': (reason: string) => void;
+  'queue:matched': (code: string) => void;
   toast: (payload: { kind: 'info' | 'error' | 'success'; message: string }) => void;
 }
 

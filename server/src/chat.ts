@@ -45,6 +45,10 @@ export function mask(text: string) {
     .join('');
 }
 
+export function spoils(text: string, answer: string) {
+  return normalize(text).includes(answer.toLowerCase());
+}
+
 export function allowed(userId: string) {
   const now = Date.now();
   const hits = (rates.get(userId) ?? []).filter((at) => now - at < WINDOW_MS);

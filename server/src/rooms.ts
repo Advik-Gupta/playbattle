@@ -6,6 +6,7 @@ import {
   MAX_ROOM_PLAYERS,
   ROOM_CODE_LENGTH,
   SOLO_CONFIG,
+  VOTEKICK_MS,
   WORD_LENGTH,
   type HintReveal,
   type OwnGuess,
@@ -14,7 +15,9 @@ import {
   type RoomConfig,
   type RoomPhase,
   type RoomState,
+  type OpenRoom,
   type RoundSummary,
+  type VoteKick,
   type Tile,
 } from './protocol.js';
 import { mergeKeyboard, pointsFor, scoreGuess, solved } from './game.js';
@@ -35,6 +38,7 @@ interface Player {
   solveMs: number | null;
   place: number | null;
   hints: HintReveal[];
+  resigned: boolean;
 }
 
 export interface Room {
@@ -52,6 +56,8 @@ export interface Room {
   history: RoundSummary[];
   matchWinnerId: string | null;
   matchId: string;
+  votekicks: VoteKick[];
+  banned: Set<string>;
 }
 
 export type RoomResult = { ok: true; room: Room } | { ok: false; error: string };
@@ -100,6 +106,7 @@ function blankPlayer(profile: PlayerProfile, socketId: string | null): Player {
     solveMs: null,
     place: null,
     hints: [],
+    resigned: false,
   };
 }
 
@@ -111,6 +118,7 @@ function resetBoards(room: Room) {
     player.solveMs = null;
     player.place = null;
     player.hints = [];
+    player.resigned = false;
   }
 }
 
@@ -134,6 +142,8 @@ export function createRoom(profile: PlayerProfile, socketId: string, config: Par
     history: [],
     matchWinnerId: null,
     matchId: randomUUID(),
+    votekicks: [],
+    banned: new Set<string>(),
   };
 
   room.players.set(profile.id, blankPlayer(profile, socketId));
@@ -149,6 +159,7 @@ export function joinRoom(
 ): RoomResult {
   const room = getRoom(code);
   if (!room) return { ok: false, error: 'room not found' };
+  if (room.banned.has(profile.id)) return { ok: false, error: 'you were removed from this room' };
 
   const existing = room.players.get(profile.id);
   if (existing) {
@@ -237,14 +248,23 @@ export function setConfig(
   return { ok: true, room };
 }
 
-export function openRooms() {
+export function openRooms(): OpenRoom[] {
   return [...rooms.values()]
-    .filter((room) => room.config.visibility === 'open' && room.phase === 'lobby')
+    .filter(
+      (room) =>
+        room.config.visibility === 'open' &&
+        room.config.mode !== 'solo' &&
+        room.phase === 'lobby' &&
+        room.players.size > 0 &&
+        room.players.size < room.config.maxPlayers,
+    )
     .map((room) => ({
       code: room.code,
+      hostName: room.players.get(room.hostId)?.profile.name ?? 'someone',
       players: room.players.size,
       maxPlayers: room.config.maxPlayers,
       rounds: room.config.rounds,
+      secondsPerRound: room.config.secondsPerRound,
     }));
 }
 
@@ -269,6 +289,7 @@ export function serialize(room: Room, viewerId: string): RoomState {
       solved: player.solved,
       solveMs: player.solveMs,
       outOfGuesses: player.guesses.length >= room.config.maxGuesses,
+      resigned: player.resigned,
       place: player.place,
       hints: own ? player.hints : null,
     };
@@ -286,6 +307,7 @@ export function serialize(room: Room, viewerId: string): RoomState {
     history: room.history,
     answer: roundDone || viewerFinished ? room.answer : null,
     matchWinnerId: room.matchWinnerId,
+    votekicks: room.votekicks,
   };
 }
 
@@ -401,6 +423,7 @@ export function submitGuess(code: string, userId: string, raw: string) {
   const player = room.players.get(userId);
   if (!player) return { ok: false, error: 'not in this room' } as const;
   if (player.solved) return { ok: false, error: 'already solved' } as const;
+  if (player.resigned) return { ok: false, error: 'you skipped this word' } as const;
   if (player.guesses.length >= room.config.maxGuesses) {
     return { ok: false, error: 'out of guesses' } as const;
   }
@@ -428,7 +451,8 @@ export function roundIsOver(room: Room) {
   if (active.length === 0) return true;
 
   return active.every(
-    (player) => player.solved || player.guesses.length >= room.config.maxGuesses,
+    (player) =>
+      player.solved || player.resigned || player.guesses.length >= room.config.maxGuesses,
   );
 }
 
@@ -485,4 +509,131 @@ export function rematch(code: string, userId: string) {
   }
 
   return { ok: true, room } as const;
+}
+
+export function resign(code: string, userId: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
+
+  const player = room.players.get(userId);
+  if (!player) return { ok: false, error: 'not in this room' } as const;
+  if (player.solved) return { ok: false, error: 'already solved' } as const;
+  if (player.resigned) return { ok: false, error: 'already skipped' } as const;
+
+  player.resigned = true;
+  return { ok: true, room, done: roundIsOver(room) } as const;
+}
+
+function pruneVotes(room: Room) {
+  const now = Date.now();
+  room.votekicks = room.votekicks.filter(
+    (vote) => vote.expiresAt > now && room.players.has(vote.targetId),
+  );
+}
+
+export function votekick(code: string, voterId: string, targetId: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (voterId === targetId) return { ok: false, error: 'you cannot vote yourself out' } as const;
+
+  const target = room.players.get(targetId);
+  if (!target) return { ok: false, error: 'they are not here' } as const;
+  if (room.players.size < 3) return { ok: false, error: 'need three players to vote' } as const;
+
+  pruneVotes(room);
+
+  const required = Math.max(2, Math.ceil((room.players.size - 1) / 2));
+  let vote = room.votekicks.find((entry) => entry.targetId === targetId);
+
+  if (!vote) {
+    vote = {
+      targetId,
+      targetName: target.profile.name,
+      votes: [],
+      required,
+      expiresAt: Date.now() + VOTEKICK_MS,
+    };
+    room.votekicks.push(vote);
+  }
+
+  vote.required = required;
+  if (!vote.votes.includes(voterId)) vote.votes.push(voterId);
+
+  if (vote.votes.length >= vote.required) {
+    room.votekicks = room.votekicks.filter((entry) => entry.targetId !== targetId);
+    return { ok: true, room, kicked: targetId } as const;
+  }
+
+  return { ok: true, room, kicked: null } as const;
+}
+
+export function removePlayer(code: string, hostId: string, targetId: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.hostId !== hostId) return { ok: false, error: 'only the host can remove people' } as const;
+  if (hostId === targetId) return { ok: false, error: 'you cannot remove yourself' } as const;
+  if (!room.players.has(targetId)) return { ok: false, error: 'they are not here' } as const;
+
+  return { ok: true, room, kicked: targetId } as const;
+}
+
+export function banAndDrop(room: Room, targetId: string) {
+  room.banned.add(targetId);
+  room.players.delete(targetId);
+  room.votekicks = room.votekicks.filter((vote) => vote.targetId !== targetId);
+
+  if (room.players.size === 0) {
+    room.emptySince = Date.now();
+    return;
+  }
+
+  if (room.hostId === targetId) {
+    const next = room.players.values().next().value;
+    if (next) room.hostId = next.profile.id;
+  }
+}
+
+interface Waiting {
+  profile: PlayerProfile;
+  socketId: string;
+  since: number;
+}
+
+const queue: Waiting[] = [];
+
+export function joinQueue(profile: PlayerProfile, socketId: string) {
+  leaveQueue(profile.id);
+
+  const opponent = queue.shift();
+
+  if (!opponent) {
+    queue.push({ profile, socketId, since: Date.now() });
+    return { waiting: true } as const;
+  }
+
+  const room = createRoom(opponent.profile, opponent.socketId, {
+    mode: 'race',
+    rounds: 3,
+    secondsPerRound: 120,
+    maxGuesses: 6,
+    maxPlayers: 2,
+    visibility: 'private',
+  });
+
+  room.players.set(profile.id, blankPlayer(profile, socketId));
+
+  return { waiting: false, room, opponent } as const;
+}
+
+export function leaveQueue(userId: string) {
+  const index = queue.findIndex((entry) => entry.profile.id === userId);
+  if (index === -1) return false;
+
+  queue.splice(index, 1);
+  return true;
+}
+
+export function queueSize() {
+  return queue.length;
 }

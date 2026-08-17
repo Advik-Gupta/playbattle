@@ -30,6 +30,7 @@ export async function SiteHeader() {
         <nav className="flex items-center gap-1 text-sm">
           {[
             { href: '/play', label: 'Play' },
+            { href: '/rooms', label: 'Rooms' },
             { href: '/players', label: 'Players' },
             { href: '/leaderboard', label: 'Leaderboard' },
             { href: '/profile', label: 'Profile' },

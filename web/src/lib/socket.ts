@@ -61,6 +61,22 @@ export const useSocket = create<SocketStore>((set, get) => ({
 
     socket.on('chat:history', (messages) => set({ messages }));
 
+    socket.on('room:removed', (reason) => {
+      toastId += 1;
+      set((state) => ({
+        room: null,
+        messages: [],
+        toasts: [...state.toasts, { id: toastId, kind: 'error', message: reason }],
+      }));
+    });
+
+    socket.on('queue:matched', () => {
+      toastId += 1;
+      set((state) => ({
+        toasts: [...state.toasts, { id: toastId, kind: 'success', message: 'opponent found' }],
+      }));
+    });
+
     socket.on('chat:message', (message) =>
       set((state) => ({ messages: [...state.messages, message].slice(-50) })),
     );

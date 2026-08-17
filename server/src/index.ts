@@ -21,6 +21,7 @@ import {
   history,
   isClean,
   mask,
+  spoils,
   systemMessage,
 } from './chat.js';
 import {
@@ -36,15 +37,21 @@ import {
 } from './presence.js';
 import {
   allRoomCodes,
+  banAndDrop,
   createRoom,
   createSolo,
   endRound,
   everyoneReady,
   getRoom,
+  joinQueue,
   joinRoom,
+  leaveQueue,
   leaveRoom,
   markDisconnected,
+  queueSize,
   reapAbsent,
+  removePlayer,
+  resign,
   openRooms,
   playerSockets,
   rematch,
@@ -56,6 +63,7 @@ import {
   startRound,
   submitGuess,
   takeHint,
+  votekick,
   sweepEmptyRooms,
   timedOut,
 } from './rooms.js';
@@ -74,7 +82,12 @@ app.use(cors({ origin: origins, credentials: true }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, uptime: Math.round(process.uptime()), rooms: roomCount() });
+  res.json({
+    ok: true,
+    uptime: Math.round(process.uptime()),
+    rooms: roomCount(),
+    queue: queueSize(),
+  });
 });
 
 app.get('/rooms', (_req, res) => {
@@ -119,6 +132,14 @@ function push(room: Room | null) {
   for (const { socketId, userId } of playerSockets(room)) {
     io.to(socketId).emit('room:state', serialize(room, userId));
   }
+}
+
+function maybeStart(room: Room) {
+  if (room.phase !== 'lobby' || !everyoneReady(room)) return;
+
+  startRound(room);
+  io.to(room.code).emit('game:roundStart', room.round);
+  push(room);
 }
 
 function finishRound(room: Room) {
@@ -185,7 +206,9 @@ io.on('connection', (socket) => {
 
     push(previous);
 
-    if (previous && previous.phase === 'playing' && roundIsOver(previous)) finishRound(previous);
+    if (!previous) return;
+    if (previous.phase === 'playing' && roundIsOver(previous)) finishRound(previous);
+    else maybeStart(previous);
   };
 
   socket.on('room:create', (config, ack) => {
@@ -236,13 +259,10 @@ io.on('connection', (socket) => {
     if (!code) return ack({ ok: false, error: 'not in a room' });
 
     const room = setReady(code, profile.id, Boolean(ready));
-    if (room && room.phase === 'lobby' && everyoneReady(room)) {
-      startRound(room);
-      io.to(room.code).emit('game:roundStart', room.round);
-    }
-
     push(room);
     ack({ ok: true, data: null });
+
+    if (room) maybeStart(room);
   });
 
   socket.on('game:guess', (word, ack) => {
@@ -283,6 +303,93 @@ io.on('connection', (socket) => {
 
   socket.on('room:leave', (ack) => {
     exitCurrent();
+    ack({ ok: true, data: null });
+  });
+
+  const dropFrom = (room: Room, targetId: string, reason: string) => {
+    banAndDrop(room, targetId);
+
+    for (const socketId of socketsFor(targetId)) {
+      const target = io.sockets.sockets.get(socketId);
+      if (!target || target.data.roomCode !== room.code) continue;
+
+      target.leave(room.code);
+      target.data.roomCode = null;
+      target.emit('room:removed', reason);
+    }
+
+    setRoom(targetId, null);
+    announcePresence(targetId);
+    io.to(room.code).emit('chat:message', systemMessage(room.code, `${reason}`));
+    push(room);
+
+    if (room.phase === 'playing' && roundIsOver(room)) finishRound(room);
+    else maybeStart(room);
+  };
+
+  socket.on('room:votekick', (targetId, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = votekick(code, profile.id, String(targetId ?? ''));
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    if (result.kicked) dropFrom(result.room, result.kicked, 'a player was voted out');
+    else push(result.room);
+
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('room:remove', (targetId, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = removePlayer(code, profile.id, String(targetId ?? ''));
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    dropFrom(result.room, result.kicked, 'the host removed a player');
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('game:skip', (ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = resign(code, profile.id);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    push(result.room);
+    ack({ ok: true, data: null });
+
+    if (result.done) finishRound(result.room);
+  });
+
+  socket.on('room:quickmatch', (ack) => {
+    exitCurrent();
+
+    const result = joinQueue(profile, socket.id);
+    if (result.waiting) return ack({ ok: true, data: { code: '', waiting: true } });
+
+    const { room, opponent } = result;
+    enterRoom(room.code);
+
+    for (const socketId of socketsFor(opponent.profile.id)) {
+      const other = io.sockets.sockets.get(socketId);
+      if (!other) continue;
+
+      other.join(room.code);
+      other.data.roomCode = room.code;
+      setRoom(opponent.profile.id, room.code);
+      announcePresence(opponent.profile.id);
+      other.emit('queue:matched', room.code);
+    }
+
+    push(room);
+    ack({ ok: true, data: { code: room.code, waiting: false } });
+  });
+
+  socket.on('room:cancelQuickmatch', (ack) => {
+    leaveQueue(profile.id);
     ack({ ok: true, data: null });
   });
 
@@ -330,6 +437,11 @@ io.on('connection', (socket) => {
     if (!body) return ack({ ok: false, error: 'say something first' });
     if (!allowed(profile.id)) return ack({ ok: false, error: 'slow down a bit' });
 
+    const room = getRoom(code);
+    if (room?.phase === 'playing' && room.answer && spoils(body, room.answer)) {
+      return ack({ ok: false, error: 'no spoilers while the round is on' });
+    }
+
     const flagged = !isClean(body);
     const message = addMessage(code, {
       userId: profile.id,
@@ -347,13 +459,16 @@ io.on('connection', (socket) => {
     console.log('disconnected', profile.id, socket.id);
 
     presenceDisconnected(profile.id, socket.id);
+    leaveQueue(profile.id);
     unwatch(profile.id);
     announcePresence(profile.id);
 
     const room = markDisconnected(socket.id);
     push(room);
 
-    if (room && room.phase === 'playing' && roundIsOver(room)) finishRound(room);
+    if (!room) return;
+    if (room.phase === 'playing' && roundIsOver(room)) finishRound(room);
+    else maybeStart(room);
   });
 });
 

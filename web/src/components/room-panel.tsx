@@ -18,8 +18,23 @@ export function RoomPanel({ userId }: { userId: string }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [queued, setQueued] = useState(false);
 
   const offline = status !== 'online' || !socket;
+
+  function quickmatch() {
+    if (!socket) return;
+    setError('');
+
+    socket.emit('room:quickmatch', (res) => {
+      if (!res.ok) setError(res.error);
+      else setQueued(res.data.waiting);
+    });
+  }
+
+  function cancelQueue() {
+    socket?.emit('room:cancelQuickmatch', () => setQueued(false));
+  }
 
   function solo() {
     if (!socket) return;
@@ -84,7 +99,20 @@ export function RoomPanel({ userId }: { userId: string }) {
             </p>
           </div>
 
-          <Button onClick={create} disabled={offline || busy} className="w-full">
+          {queued ? (
+            <div className="space-y-2 rounded-lg border border-border p-4 text-center">
+              <p className="text-sm font-medium">Looking for an opponent…</p>
+              <Button variant="ghost" size="sm" onClick={cancelQueue}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={quickmatch} disabled={offline} className="w-full">
+              Quick match
+            </Button>
+          )}
+
+          <Button onClick={create} variant="outline" disabled={offline || busy} className="w-full">
             Create room
           </Button>
 
@@ -172,8 +200,24 @@ export function RoomPanel({ userId }: { userId: string }) {
                   <span className="text-xs text-muted-foreground">host</span>
                 )}
               </span>
-              <span className="text-xs text-muted-foreground">
-                {player.ready ? 'ready' : 'waiting'}
+              <span className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {player.ready ? 'ready' : 'waiting'}
+                </span>
+
+                {isHost && player.profile.id !== userId && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      socket?.emit('room:remove', player.profile.id, (res) => {
+                        if (!res.ok) setError(res.error);
+                      })
+                    }
+                  >
+                    Remove
+                  </Button>
+                )}
               </span>
             </div>
           ))}
@@ -191,7 +235,7 @@ export function RoomPanel({ userId }: { userId: string }) {
         </div>
 
         {isHost && (
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-5">
             <Setting
               label="Rounds"
               value={room.config.rounds}
@@ -209,6 +253,13 @@ export function RoomPanel({ userId }: { userId: string }) {
               value={room.config.maxGuesses}
               options={CONFIG_LIMITS.maxGuesses}
               onChange={(maxGuesses) => updateConfig({ maxGuesses })}
+            />
+            <Setting
+              label="Visibility"
+              value={room.config.visibility === 'open' ? 1 : 0}
+              options={[0, 1]}
+              labels={{ 0: 'private', 1: 'public' }}
+              onChange={(value) => updateConfig({ visibility: value === 1 ? 'open' : 'private' })}
             />
             <Setting
               label="Players"
@@ -239,11 +290,13 @@ function Setting({
   label,
   value,
   options,
+  labels,
   onChange,
 }: {
   label: string;
   value: number;
   options: readonly number[];
+  labels?: Record<number, string>;
   onChange: (value: number) => void;
 }) {
   return (
@@ -258,7 +311,7 @@ function Setting({
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option === 0 ? 'off' : option}
+            {labels?.[option] ?? (option === 0 ? 'off' : option)}
           </option>
         ))}
       </select>

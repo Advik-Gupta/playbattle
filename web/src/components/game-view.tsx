@@ -43,6 +43,7 @@ export function GameView({
 }) {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
+  const [pulsing, setPulsing] = useState<string | null>(null);
   const clearRoom = useSocket((s) => s.clearRoom);
 
   const me = room.players.find((p) => p.profile.id === userId);
@@ -56,6 +57,18 @@ export function GameView({
     setDraft('');
     setError('');
   }, [room.round, room.phase]);
+
+  useEffect(() => {
+    const onGuess = (playerId: string) => {
+      setPulsing(playerId);
+      setTimeout(() => setPulsing((current) => (current === playerId ? null : current)), 700);
+    };
+
+    socket.on('game:opponentGuessed', onGuess);
+    return () => {
+      socket.off('game:opponentGuessed', onGuess);
+    };
+  }, [socket]);
 
   const send = useCallback(() => {
     if (draft.length !== WORD_LENGTH) {
@@ -139,12 +152,33 @@ export function GameView({
           )}
 
           {others.map((player) => (
-            <div key={player.profile.id} className="space-y-1.5">
+            <div
+              key={player.profile.id}
+              className={`space-y-1.5 rounded-lg p-2 transition-colors duration-300 ${
+                pulsing === player.profile.id ? 'bg-accent' : ''
+              }`}
+            >
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">{player.profile.name}</span>
-                <span className="text-xs text-muted-foreground">{player.score}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{player.score}</span>
+                  {room.players.length > 2 && room.phase === 'playing' && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        socket.emit('room:votekick', player.profile.id, (res) => {
+                          if (!res.ok) setError(res.error);
+                        })
+                      }
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      kick
+                    </button>
+                  )}
+                </span>
               </div>
               <MiniBoard guesses={player.maskedGuesses} rows={room.config.maxGuesses} />
+              {player.resigned && <p className="text-xs text-muted-foreground">skipped</p>}
               {player.solved && (
                 <p className="text-xs text-emerald-500">solved in {player.guesses?.length ?? 0}</p>
               )}
@@ -152,6 +186,34 @@ export function GameView({
           ))}
         </div>
       </div>
+
+      {room.votekicks.length > 0 && (
+        <div className="space-y-1.5">
+          {room.votekicks.map((vote) => (
+            <div
+              key={vote.targetId}
+              className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+            >
+              <span>
+                Vote to remove {vote.targetName} ({vote.votes.length}/{vote.required})
+              </span>
+              {!vote.votes.includes(userId) && vote.targetId !== userId && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    socket.emit('room:votekick', vote.targetId, (res) => {
+                      if (!res.ok) setError(res.error);
+                    })
+                  }
+                >
+                  Vote
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {room.answer && (
         <p className="text-center text-sm">
@@ -196,13 +258,31 @@ export function GameView({
           </div>
         </div>
       ) : (
-        <Keyboard
-          keyboard={me?.keyboard ?? {}}
-          onKey={type}
-          onEnter={send}
-          onBackspace={back}
-          disabled={locked}
-        />
+        <div className="space-y-3">
+          <Keyboard
+            keyboard={me?.keyboard ?? {}}
+            onKey={type}
+            onEnter={send}
+            onBackspace={back}
+            disabled={locked}
+          />
+
+          {!isSolo && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full"
+              disabled={locked}
+              onClick={() =>
+                socket.emit('game:skip', (res) => {
+                  if (!res.ok) setError(res.error);
+                })
+              }
+            >
+              Skip this word
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );
