@@ -28,6 +28,20 @@ export const EMPTY_STATS: Stats = {
   points: 0,
 };
 
+export interface FriendLink {
+  fromId: string;
+  toId: string;
+  status: 'pending' | 'accepted';
+}
+
+export interface PlayerCard {
+  userId: string;
+  displayName: string;
+  played: number;
+  won: number;
+  points: number;
+}
+
 export interface SoloStats {
   played: number;
   solves: number;
@@ -132,6 +146,21 @@ const UserModel: Model<Profile> =
   (mongoose.models.User as Model<Profile> | undefined) ??
   (mongoose.model('User', userSchema) as unknown as Model<Profile>);
 
+const friendSchema = new Schema(
+  {
+    fromId: { type: String, required: true, index: true },
+    toId: { type: String, required: true, index: true },
+    status: { type: String, default: 'pending', index: true },
+  },
+  { collection: 'friends', timestamps: true },
+);
+
+friendSchema.index({ fromId: 1, toId: 1 }, { unique: true });
+
+const FriendModel: Model<FriendLink> =
+  (mongoose.models.Friend as Model<FriendLink> | undefined) ??
+  (mongoose.model('Friend', friendSchema) as unknown as Model<FriendLink>);
+
 const MatchModel: Model<MatchRecord> =
   (mongoose.models.Match as Model<MatchRecord> | undefined) ??
   (mongoose.model('Match', matchSchema) as unknown as Model<MatchRecord>);
@@ -151,6 +180,10 @@ async function connect(): Promise<boolean> {
     console.error('mongo connection failed:', (err as Error).message);
     return false;
   }
+}
+
+export async function databaseReady() {
+  return connect();
 }
 
 function plain<T>(doc: T): T {
@@ -314,4 +347,136 @@ export async function leaderboard(limit = 20): Promise<Profile[]> {
     profile.solo = { ...EMPTY_SOLO, ...(profile.solo ?? {}) };
     return profile;
   });
+}
+
+function toCard(profile: Profile): PlayerCard {
+  const stats = { ...EMPTY_STATS, ...(profile.stats ?? {}) };
+
+  return {
+    userId: profile.userId,
+    displayName: profile.displayName || 'player',
+    played: stats.played,
+    won: stats.won,
+    points: stats.points,
+  };
+}
+
+export async function displayNameTaken(name: string, userId: string): Promise<boolean> {
+  if (!(await connect())) return false;
+
+  const existing = await UserModel.findOne({
+    displayName: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    userId: { $ne: userId },
+  })
+    .lean()
+    .exec();
+
+  return Boolean(existing);
+}
+
+export async function searchPlayers(query: string, userId: string): Promise<PlayerCard[]> {
+  if (!(await connect())) return [];
+
+  const term = query.trim();
+  if (term.length < 2) return [];
+
+  const docs = await UserModel.find({
+    userId: { $ne: userId },
+    displayName: new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+  })
+    .limit(20)
+    .lean<Profile[]>()
+    .exec();
+
+  return docs.map((doc) => toCard(plain(doc)));
+}
+
+export async function playersByIds(ids: string[]): Promise<PlayerCard[]> {
+  if (ids.length === 0 || !(await connect())) return [];
+
+  const docs = await UserModel.find({ userId: { $in: ids } })
+    .lean<Profile[]>()
+    .exec();
+
+  return docs.map((doc) => toCard(plain(doc)));
+}
+
+export async function requestFriend(fromId: string, toId: string) {
+  if (fromId === toId) return { ok: false, error: 'that is you' } as const;
+  if (!(await connect())) return { ok: false, error: 'database unavailable' } as const;
+
+  const reverse = await FriendModel.findOne({ fromId: toId, toId: fromId }).lean<FriendLink>().exec();
+
+  if (reverse) {
+    if (reverse.status === 'accepted') return { ok: false, error: 'already friends' } as const;
+
+    await FriendModel.updateOne({ fromId: toId, toId: fromId }, { $set: { status: 'accepted' } }).exec();
+    return { ok: true, accepted: true } as const;
+  }
+
+  const existing = await FriendModel.findOne({ fromId, toId }).lean<FriendLink>().exec();
+  if (existing) {
+    return existing.status === 'accepted'
+      ? ({ ok: false, error: 'already friends' } as const)
+      : ({ ok: false, error: 'request already sent' } as const);
+  }
+
+  await FriendModel.create({ fromId, toId, status: 'pending' });
+  return { ok: true, accepted: false } as const;
+}
+
+export async function respondToRequest(userId: string, fromId: string, accept: boolean) {
+  if (!(await connect())) return false;
+
+  if (accept) {
+    await FriendModel.updateOne({ fromId, toId: userId }, { $set: { status: 'accepted' } }).exec();
+  } else {
+    await FriendModel.deleteOne({ fromId, toId: userId }).exec();
+  }
+
+  return true;
+}
+
+export async function removeFriend(userId: string, otherId: string) {
+  if (!(await connect())) return false;
+
+  await FriendModel.deleteMany({
+    $or: [
+      { fromId: userId, toId: otherId },
+      { fromId: otherId, toId: userId },
+    ],
+  }).exec();
+
+  return true;
+}
+
+export async function friendIds(userId: string): Promise<string[]> {
+  if (!(await connect())) return [];
+
+  const links = await FriendModel.find({
+    status: 'accepted',
+    $or: [{ fromId: userId }, { toId: userId }],
+  })
+    .lean<FriendLink[]>()
+    .exec();
+
+  return links.map((link) => (link.fromId === userId ? link.toId : link.fromId));
+}
+
+export async function friendList(userId: string): Promise<PlayerCard[]> {
+  return playersByIds(await friendIds(userId));
+}
+
+export async function pendingRequests(userId: string): Promise<PlayerCard[]> {
+  if (!(await connect())) return [];
+
+  const links = await FriendModel.find({ toId: userId, status: 'pending' }).lean<FriendLink[]>().exec();
+  return playersByIds(links.map((link) => link.fromId));
+}
+
+export async function sentRequestIds(userId: string): Promise<string[]> {
+  if (!(await connect())) return [];
+
+  const links = await FriendModel.find({ fromId: userId, status: 'pending' }).lean<FriendLink[]>().exec();
+  return links.map((link) => link.toId);
 }

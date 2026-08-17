@@ -5,6 +5,7 @@ import { UserMenu } from '@/components/user-menu';
 import { ConnectionStatus } from '@/components/connection-status';
 import { Realtime } from '@/components/realtime';
 import { Toaster } from '@/components/toaster';
+import { InviteDialog } from '@/components/invite-dialog';
 
 export async function SiteHeader() {
   const session = await auth();
@@ -29,6 +30,7 @@ export async function SiteHeader() {
         <nav className="flex items-center gap-1 text-sm">
           {[
             { href: '/play', label: 'Play' },
+            { href: '/players', label: 'Players' },
             { href: '/leaderboard', label: 'Leaderboard' },
             { href: '/profile', label: 'Profile' },
           ].map((item) => (
@@ -48,6 +50,7 @@ export async function SiteHeader() {
             <UserMenu name={name} signOutAction={handleSignOut} />
             <Realtime id={session.user.id} name={name} />
             <Toaster />
+            <InviteDialog />
           </div>
         )}
       </div>

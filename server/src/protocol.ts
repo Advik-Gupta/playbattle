@@ -108,12 +108,44 @@ export interface RoomState {
   matchWinnerId: string | null;
 }
 
+export type PresenceStatus = 'offline' | 'online' | 'playing';
+
+export interface PresenceEntry {
+  userId: string;
+  status: PresenceStatus;
+  roomCode: string | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  userId: string;
+  name: string;
+  text: string;
+  at: number;
+  flagged: boolean;
+  system: boolean;
+}
+
+export interface GameInvite {
+  fromId: string;
+  fromName: string;
+  code: string;
+  mode: GameMode;
+}
+
+export const CHAT_LIMIT = 200;
+export const CHAT_HISTORY = 50;
+
 export type Ack<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export interface ClientToServerEvents {
   'room:create': (config: Partial<RoomConfig>, ack: (res: Ack<{ code: string }>) => void) => void;
   'room:solo': (config: Partial<RoomConfig>, ack: (res: Ack<{ code: string }>) => void) => void;
   'game:hint': (ack: (res: Ack<HintReveal>) => void) => void;
+  'presence:watch': (userIds: string[], ack: (res: Ack<PresenceEntry[]>) => void) => void;
+  'presence:ping': (ack: (res: Ack<null>) => void) => void;
+  'invite:send': (toUserId: string, ack: (res: Ack<null>) => void) => void;
+  'chat:send': (text: string, ack: (res: Ack<null>) => void) => void;
   'room:join': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
   'room:leave': (ack: (res: Ack<null>) => void) => void;
   'room:ready': (ready: boolean, ack: (res: Ack<null>) => void) => void;
@@ -129,6 +161,11 @@ export interface ServerToClientEvents {
   'game:roundEnd': (summary: RoundSummary) => void;
   'game:matchEnd': (state: RoomState) => void;
   'game:opponentGuessed': (playerId: string) => void;
+  'presence:update': (entry: PresenceEntry) => void;
+  'invite:received': (invite: GameInvite) => void;
+  'chat:message': (message: ChatMessage) => void;
+  'chat:history': (messages: ChatMessage[]) => void;
+  'session:replaced': () => void;
   toast: (payload: { kind: 'info' | 'error' | 'success'; message: string }) => void;
 }
 

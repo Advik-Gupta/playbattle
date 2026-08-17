@@ -3,6 +3,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import type {
+  ChatMessage,
   ClientToServerEvents,
   PlayerProfile,
   RoomState,
@@ -24,6 +25,7 @@ interface SocketStore {
   socket: GameSocket | null;
   status: ConnectionStatus;
   room: RoomState | null;
+  messages: ChatMessage[];
   toasts: Toast[];
   connect: (profile: PlayerProfile) => void;
   disconnect: () => void;
@@ -37,6 +39,7 @@ export const useSocket = create<SocketStore>((set, get) => ({
   socket: null,
   status: 'idle',
   room: null,
+  messages: [],
   toasts: [],
 
   connect: (profile) => {
@@ -56,10 +59,27 @@ export const useSocket = create<SocketStore>((set, get) => ({
 
     socket.on('room:state', (room) => set({ room }));
 
+    socket.on('chat:history', (messages) => set({ messages }));
+
+    socket.on('chat:message', (message) =>
+      set((state) => ({ messages: [...state.messages, message].slice(-50) })),
+    );
+
+    socket.on('session:replaced', () => {
+      toastId += 1;
+      set((state) => ({
+        toasts: [
+          ...state.toasts,
+          { id: toastId, kind: 'error', message: 'opened somewhere else, this tab is idle' },
+        ],
+      }));
+    });
+
     socket.on('room:closed', (reason) => {
       toastId += 1;
       set((state) => ({
         room: null,
+        messages: [],
         toasts: [...state.toasts, { id: toastId, kind: 'info', message: reason }],
       }));
     });
@@ -74,10 +94,10 @@ export const useSocket = create<SocketStore>((set, get) => ({
 
   disconnect: () => {
     get().socket?.close();
-    set({ socket: null, status: 'idle', room: null });
+    set({ socket: null, status: 'idle', room: null, messages: [] });
   },
 
-  clearRoom: () => set({ room: null }),
+  clearRoom: () => set({ room: null, messages: [] }),
 
   dismiss: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));

@@ -1,16 +1,27 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
-import { getProfile, saveProfile } from '@/lib/db';
+import { displayNameTaken, getProfile, saveProfile } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 
-export default async function Onboarding() {
+const MESSAGES: Record<string, string> = {
+  short: 'Names need at least two characters.',
+  taken: 'Someone already has that name.',
+};
+
+export default async function Onboarding({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const session = await auth();
   if (!session?.user?.id) redirect('/signin');
 
   const profile = await getProfile(session.user.id);
   if (profile?.displayName) redirect('/');
+
+  const error = (await searchParams).error ?? '';
 
   async function save(formData: FormData) {
     'use server';
@@ -19,10 +30,14 @@ export default async function Onboarding() {
     if (!current?.user?.id) redirect('/signin');
 
     const displayName = String(formData.get('displayName') ?? '')
+      .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 20);
 
-    if (displayName.length < 2) return;
+    if (displayName.length < 2) redirect('/onboarding?error=short');
+    if (await displayNameTaken(displayName, current.user.id)) {
+      redirect('/onboarding?error=taken');
+    }
 
     await saveProfile(current.user.id, {
       displayName,
@@ -53,6 +68,7 @@ export default async function Onboarding() {
               defaultValue={session.user.name ?? ''}
               required
             />
+            {error && <p className="text-sm text-red-500">{MESSAGES[error] ?? 'Try again.'}</p>}
             <Button type="submit" size="lg">
               continue
             </Button>

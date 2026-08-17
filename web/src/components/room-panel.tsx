@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { GameView } from '@/components/game-view';
+import { ChatBox } from '@/components/chat-box';
 
 export function RoomPanel({ userId }: { userId: string }) {
   const socket = useSocket((s) => s.socket);
@@ -122,11 +123,15 @@ export function RoomPanel({ userId }: { userId: string }) {
 
   if (room.phase !== 'lobby' && socket) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <GameView room={room} socket={socket} userId={userId} />
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="p-6">
+            <GameView room={room} socket={socket} userId={userId} />
+          </CardContent>
+        </Card>
+
+        {room.config.mode !== 'solo' && <ChatBox userId={userId} />}
+      </div>
     );
   }
 
@@ -223,6 +228,8 @@ export function RoomPanel({ userId }: { userId: string }) {
         </Button>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
+
+        <ChatBox userId={userId} />
       </CardContent>
     </Card>
   );

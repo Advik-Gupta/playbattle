@@ -309,6 +309,32 @@ export function sweepEmptyRooms() {
   return closed;
 }
 
+const ABSENT_TTL = 60_000;
+
+export function reapAbsent(room: Room) {
+  if (room.phase !== 'lobby') return [];
+
+  const cutoff = Date.now() - ABSENT_TTL;
+  const dropped: string[] = [];
+
+  for (const [userId, player] of room.players) {
+    if (player.socketId !== null) continue;
+    if (player.leftAt !== null && player.leftAt < cutoff) {
+      room.players.delete(userId);
+      dropped.push(userId);
+    }
+  }
+
+  if (dropped.length > 0 && room.players.size > 0 && !room.players.has(room.hostId)) {
+    const next = room.players.values().next().value;
+    if (next) room.hostId = next.profile.id;
+  }
+
+  if (room.players.size === 0) room.emptySince = Date.now();
+
+  return dropped;
+}
+
 export function allRoomCodes() {
   return [...rooms.keys()];
 }

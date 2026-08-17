@@ -14,6 +14,27 @@ import type {
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
 import {
+  addMessage,
+  allowed,
+  clean,
+  clearRoom,
+  history,
+  isClean,
+  mask,
+  systemMessage,
+} from './chat.js';
+import {
+  connected as presenceConnected,
+  disconnected as presenceDisconnected,
+  setRoom,
+  socketsFor,
+  statusOf,
+  touch,
+  unwatch,
+  watch,
+  watchersOf,
+} from './presence.js';
+import {
   allRoomCodes,
   createRoom,
   createSolo,
@@ -23,6 +44,7 @@ import {
   joinRoom,
   leaveRoom,
   markDisconnected,
+  reapAbsent,
   openRooms,
   playerSockets,
   rematch,
@@ -82,6 +104,16 @@ io.use((socket, next) => {
 
 const ROUND_BREAK = 5000;
 
+function announcePresence(userId: string) {
+  const entry = statusOf(userId);
+
+  for (const watcherId of watchersOf(userId)) {
+    for (const socketId of socketsFor(watcherId)) {
+      io.to(socketId).emit('presence:update', entry);
+    }
+  }
+}
+
 function push(room: Room | null) {
   if (!room) return;
   for (const { socketId, userId } of playerSockets(room)) {
@@ -116,6 +148,25 @@ io.on('connection', (socket) => {
   const profile = socket.data.profile as PlayerProfile;
   console.log('connected', profile.id, socket.id);
 
+  for (const existing of socketsFor(profile.id)) {
+    const other = io.sockets.sockets.get(existing);
+    if (!other) continue;
+
+    other.emit('session:replaced');
+    other.disconnect(true);
+  }
+
+  presenceConnected(profile.id, socket.id);
+  announcePresence(profile.id);
+
+  const enterRoom = (code: string) => {
+    socket.join(code);
+    socket.data.roomCode = code;
+    setRoom(profile.id, code);
+    announcePresence(profile.id);
+    socket.emit('chat:history', history(code));
+  };
+
   const exitCurrent = () => {
     const code = socket.data.roomCode;
     if (!code) return;
@@ -123,6 +174,15 @@ io.on('connection', (socket) => {
     const previous = leaveRoom(code, profile.id);
     socket.leave(code);
     socket.data.roomCode = null;
+    setRoom(profile.id, null);
+    announcePresence(profile.id);
+
+    if (previous && previous.players.size > 0) {
+      io.to(code).emit('chat:message', systemMessage(code, `${profile.name} left`));
+    } else {
+      clearRoom(code);
+    }
+
     push(previous);
 
     if (previous && previous.phase === 'playing' && roundIsOver(previous)) finishRound(previous);
@@ -131,8 +191,7 @@ io.on('connection', (socket) => {
   socket.on('room:create', (config, ack) => {
     exitCurrent();
     const room = createRoom(profile, socket.id, config ?? {});
-    socket.join(room.code);
-    socket.data.roomCode = room.code;
+    enterRoom(room.code);
     push(room);
     ack({ ok: true, data: { code: room.code } });
   });
@@ -140,8 +199,7 @@ io.on('connection', (socket) => {
   socket.on('room:solo', (config, ack) => {
     exitCurrent();
     const room = createSolo(profile, socket.id, config ?? {});
-    socket.join(room.code);
-    socket.data.roomCode = room.code;
+    enterRoom(room.code);
     push(room);
     socket.emit('game:roundStart', room.round);
     ack({ ok: true, data: { code: room.code } });
@@ -164,8 +222,11 @@ io.on('connection', (socket) => {
 
     if (socket.data.roomCode && socket.data.roomCode !== result.room.code) exitCurrent();
 
-    socket.join(result.room.code);
-    socket.data.roomCode = result.room.code;
+    enterRoom(result.room.code);
+    io.to(result.room.code).emit(
+      'chat:message',
+      systemMessage(result.room.code, `${profile.name} joined`),
+    );
     push(result.room);
     ack({ ok: true, data: { code: result.room.code } });
   });
@@ -225,8 +286,69 @@ io.on('connection', (socket) => {
     ack({ ok: true, data: null });
   });
 
+  socket.on('presence:watch', (userIds, ack) => {
+    const list = Array.isArray(userIds) ? userIds.filter((id) => typeof id === 'string') : [];
+    ack({ ok: true, data: watch(profile.id, list) });
+  });
+
+  socket.on('presence:ping', (ack) => {
+    touch(profile.id);
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('invite:send', (toUserId, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'you are not in a room' });
+
+    const room = getRoom(code);
+    if (!room) return ack({ ok: false, error: 'room not found' });
+    if (room.config.mode === 'solo') return ack({ ok: false, error: 'solo games are private' });
+    if (room.players.size >= room.config.maxPlayers) {
+      return ack({ ok: false, error: 'room is full' });
+    }
+
+    const targets = socketsFor(String(toUserId ?? ''));
+    if (targets.length === 0) return ack({ ok: false, error: 'they are offline' });
+
+    for (const socketId of targets) {
+      io.to(socketId).emit('invite:received', {
+        fromId: profile.id,
+        fromName: profile.name,
+        code: room.code,
+        mode: room.config.mode,
+      });
+    }
+
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('chat:send', (text, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const body = clean(text);
+    if (!body) return ack({ ok: false, error: 'say something first' });
+    if (!allowed(profile.id)) return ack({ ok: false, error: 'slow down a bit' });
+
+    const flagged = !isClean(body);
+    const message = addMessage(code, {
+      userId: profile.id,
+      name: profile.name,
+      text: flagged ? mask(body) : body,
+      flagged,
+      system: false,
+    });
+
+    io.to(code).emit('chat:message', message);
+    ack({ ok: true, data: null });
+  });
+
   socket.on('disconnect', () => {
     console.log('disconnected', profile.id, socket.id);
+
+    presenceDisconnected(profile.id, socket.id);
+    unwatch(profile.id);
+    announcePresence(profile.id);
 
     const room = markDisconnected(socket.id);
     push(room);
@@ -244,7 +366,18 @@ setInterval(() => {
 }, 1000);
 
 setInterval(() => {
+  for (const code of allRoomCodes()) {
+    const room = getRoom(code);
+    if (!room) continue;
+
+    for (const userId of reapAbsent(room)) {
+      io.to(code).emit('chat:message', systemMessage(code, 'a player was dropped for being away'));
+      console.log('dropped absent player', userId, 'from', code);
+    }
+  }
+
   for (const code of sweepEmptyRooms()) {
+    clearRoom(code);
     io.to(code).emit('room:closed', 'room closed after being empty');
     console.log('closed empty room', code);
   }
