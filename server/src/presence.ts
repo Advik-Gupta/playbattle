@@ -90,3 +90,16 @@ export function unwatch(watcherId: string) {
 export function watchersOf(userId: string) {
   return [...(watchers.get(userId) ?? [])];
 }
+
+const OFFLINE_TTL = 10 * 60 * 1000;
+
+export function sweepOffline() {
+  const cutoff = Date.now() - OFFLINE_TTL;
+
+  for (const [userId, entry] of people) {
+    if (entry.sockets.size === 0 && entry.lastSeen < cutoff) {
+      people.delete(userId);
+      watchers.delete(userId);
+    }
+  }
+}

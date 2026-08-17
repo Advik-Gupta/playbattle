@@ -273,7 +273,7 @@ export function serialize(room: Room, viewerId: string): RoomState {
   const roundDone = room.phase === 'round_over' || room.phase === 'match_over';
   const viewerFinished =
     viewer !== undefined &&
-    (viewer.solved || viewer.guesses.length >= room.config.maxGuesses);
+    (viewer.solved || viewer.resigned || viewer.guesses.length >= room.config.maxGuesses);
 
   const players: PlayerView[] = [...room.players.values()].map((player) => {
     const own = player.profile.id === viewerId;

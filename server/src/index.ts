@@ -13,6 +13,7 @@ import type {
 } from './protocol.js';
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
+import { bannedCount, isBanned, refreshBans } from './bans.js';
 import {
   addMessage,
   allowed,
@@ -22,6 +23,7 @@ import {
   isClean,
   mask,
   spoils,
+  sweepRates as sweepChatRates,
   systemMessage,
 } from './chat.js';
 import {
@@ -34,6 +36,7 @@ import {
   unwatch,
   watch,
   watchersOf,
+  sweepOffline as sweepPresence,
 } from './presence.js';
 import {
   allRoomCodes,
@@ -87,11 +90,58 @@ app.get('/health', (_req, res) => {
     uptime: Math.round(process.uptime()),
     rooms: roomCount(),
     queue: queueSize(),
+    banned: bannedCount(),
   });
 });
 
 app.get('/rooms', (_req, res) => {
   res.json({ rooms: openRooms() });
+});
+
+app.post('/bans/sync', async (req, res) => {
+  const secret = process.env.INTERNAL_API_SECRET ?? '';
+
+  if (!secret || req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  await refreshBans(true);
+
+  const userId = String(req.body?.userId ?? '');
+  let dropped = 0;
+
+  if (userId && isBanned(userId)) {
+    for (const socketId of socketsFor(userId)) {
+      const target = io.sockets.sockets.get(socketId);
+      if (!target) continue;
+
+      target.emit('toast', { kind: 'error', message: 'an admin has banned this account' });
+      target.disconnect(true);
+      dropped += 1;
+    }
+  }
+
+  res.json({ ok: true, dropped, banned: bannedCount() });
+});
+
+app.post('/announce', (req, res) => {
+  const secret = process.env.INTERNAL_API_SECRET ?? '';
+
+  if (!secret || req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const message = String(req.body?.message ?? '').trim().slice(0, 200);
+  if (!message) {
+    res.status(400).json({ error: 'empty message' });
+    return;
+  }
+
+  io.emit('toast', { kind: 'info', message });
+  console.log('announcement sent:', message);
+  res.json({ ok: true });
 });
 
 const server = http.createServer(app);
@@ -106,9 +156,12 @@ function readProfile(raw: unknown): PlayerProfile | null {
   return { id, name: typeof name === 'string' && name ? name.slice(0, 20) : 'player' };
 }
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const profile = readProfile(socket.handshake.auth?.profile);
   if (!profile) return next(new Error('missing profile'));
+
+  await refreshBans();
+  if (isBanned(profile.id)) return next(new Error('you are banned'));
 
   socket.data.profile = profile;
   socket.data.roomCode = null;
@@ -497,6 +550,12 @@ setInterval(() => {
     console.log('closed empty room', code);
   }
 }, 30_000);
+
+setInterval(() => {
+  void refreshBans(true);
+  sweepChatRates();
+  sweepPresence();
+}, 60_000);
 
 server.listen(port, () => {
   console.log(`server on http://localhost:${port}`);

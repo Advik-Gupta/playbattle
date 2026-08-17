@@ -67,6 +67,7 @@ export interface Profile {
   displayName: string;
   stats: Stats;
   solo: SoloStats;
+  banned?: boolean;
   createdAt?: Date;
 }
 
@@ -110,6 +111,7 @@ const userSchema = new Schema(
       bestStreak: { type: Number, default: 0 },
       points: { type: Number, default: 0 },
     },
+    banned: { type: Boolean, default: false },
     solo: {
       played: { type: Number, default: 0 },
       solves: { type: Number, default: 0 },
@@ -141,6 +143,8 @@ const matchSchema = new Schema(
   },
   { collection: 'matches' },
 );
+
+matchSchema.index({ 'players.userId': 1, playedAt: -1 });
 
 const UserModel: Model<Profile> =
   (mongoose.models.User as Model<Profile> | undefined) ??
@@ -336,7 +340,7 @@ export async function leaderboard(limit = 20): Promise<Profile[]> {
   if (!(await connect())) return [];
 
   const docs = await UserModel.find({ 'stats.played': { $gt: 0 } })
-    .sort({ 'stats.points': -1 })
+    .sort({ 'stats.points': -1, 'stats.won': -1 })
     .limit(limit)
     .lean<Profile[]>()
     .exec();
@@ -479,4 +483,138 @@ export async function sentRequestIds(userId: string): Promise<string[]> {
 
   const links = await FriendModel.find({ fromId: userId, status: 'pending' }).lean<FriendLink[]>().exec();
   return links.map((link) => link.toId);
+}
+
+export interface AdminOverview {
+  users: number;
+  matches: number;
+  rounds: number;
+  soloGames: number;
+  newUsers: number;
+  perDay: { day: string; count: number }[];
+  top: PlayerCard[];
+}
+
+function dayKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+export async function adminOverview(days = 14): Promise<AdminOverview | null> {
+  if (!(await connect())) return null;
+
+  const since = new Date(Date.now() - days * 86_400_000);
+
+  const [users, matches, soloGames, newUsers, recent, top] = await Promise.all([
+    UserModel.countDocuments({}).exec(),
+    MatchModel.countDocuments({ mode: 'race' }).exec(),
+    MatchModel.countDocuments({ mode: 'solo' }).exec(),
+    UserModel.countDocuments({ createdAt: { $gte: since } }).exec(),
+    MatchModel.find({ playedAt: { $gte: since.toISOString() } })
+      .select({ playedAt: 1, rounds: 1 })
+      .lean<{ playedAt: Date; rounds: unknown[] }[]>()
+      .exec(),
+    UserModel.find({ 'stats.played': { $gt: 0 } })
+      .sort({ 'stats.points': -1, 'stats.won': -1 })
+      .limit(5)
+      .lean<Profile[]>()
+      .exec(),
+  ]);
+
+  const counts = new Map<string, number>();
+  for (let i = days - 1; i >= 0; i -= 1) {
+    counts.set(dayKey(new Date(Date.now() - i * 86_400_000)), 0);
+  }
+
+  let rounds = 0;
+  for (const match of recent) {
+    rounds += match.rounds?.length ?? 0;
+    const key = dayKey(new Date(match.playedAt));
+    if (counts.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return {
+    users,
+    matches,
+    rounds,
+    soloGames,
+    newUsers,
+    perDay: [...counts].map(([day, count]) => ({ day, count })),
+    top: top.map((doc) => toCard(plain(doc))),
+  };
+}
+
+export interface AdminUser extends PlayerCard {
+  email: string;
+  banned: boolean;
+  soloPlayed: number;
+  joined: string | null;
+}
+
+export async function adminUserPage(query: string, page: number, size = 20) {
+  if (!(await connect())) return { users: [] as AdminUser[], total: 0 };
+
+  const term = query.trim();
+  const filter = term
+    ? {
+        $or: [
+          { displayName: new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+          { email: new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        ],
+      }
+    : {};
+
+  const [docs, total] = await Promise.all([
+    UserModel.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(Math.max(0, page - 1) * size)
+      .limit(size)
+      .lean<(Profile & { banned?: boolean; createdAt?: Date })[]>()
+      .exec(),
+    UserModel.countDocuments(filter).exec(),
+  ]);
+
+  const users = docs.map((doc) => {
+    const profile = plain(doc);
+    const card = toCard(profile);
+
+    return {
+      ...card,
+      email: profile.email ?? '',
+      banned: Boolean(profile.banned),
+      soloPlayed: profile.solo?.played ?? 0,
+      joined: profile.createdAt ? String(profile.createdAt).slice(0, 10) : null,
+    };
+  });
+
+  return { users, total };
+}
+
+export async function adminMatchPage(page: number, size = 20) {
+  if (!(await connect())) return { matches: [] as MatchRecord[], total: 0 };
+
+  const [docs, total] = await Promise.all([
+    MatchModel.find({})
+      .sort({ playedAt: -1 })
+      .skip(Math.max(0, page - 1) * size)
+      .limit(size)
+      .lean<MatchRecord[]>()
+      .exec(),
+    MatchModel.countDocuments({}).exec(),
+  ]);
+
+  return { matches: docs.map(plain), total };
+}
+
+export async function setBanned(userId: string, banned: boolean) {
+  if (!(await connect())) return false;
+
+  await UserModel.updateOne({ userId }, { $set: { banned } }).exec();
+  return true;
+}
+
+export async function bannedIds(): Promise<string[]> {
+  if (!(await connect())) return [];
+
+  const docs = await UserModel.find({ banned: true }).select({ userId: 1 }).lean<{ userId: string }[]>().exec();
+  return docs.map((doc) => doc.userId);
 }

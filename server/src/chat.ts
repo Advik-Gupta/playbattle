@@ -95,3 +95,13 @@ export function clean(text: string) {
     .trim()
     .slice(0, CHAT_LIMIT);
 }
+
+export function sweepRates() {
+  const now = Date.now();
+
+  for (const [userId, hits] of rates) {
+    const live = hits.filter((at) => now - at < WINDOW_MS);
+    if (live.length === 0) rates.delete(userId);
+    else rates.set(userId, live);
+  }
+}
