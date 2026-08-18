@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { EMPTY_SOLO, EMPTY_STATS, getProfile, recentMatches } from '@/lib/db';
 import { MatchHistory } from '@/components/match-history';
 import { SiteHeader } from '@/components/site-header';
+import { MobileNav } from '@/components/mobile-nav';
 import { StatTile } from '@/components/stat-tile';
 import { Button } from '@/components/ui/button';
 
@@ -22,7 +23,7 @@ export default async function ProfilePage() {
   const avgGuesses = stats.solves > 0 ? (stats.guesses / stats.solves).toFixed(1) : '-';
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh pb-20 sm:pb-0">
       <SiteHeader />
 
       <main className="container max-w-3xl py-10">
@@ -69,6 +70,8 @@ export default async function ProfilePage() {
           <MatchHistory matches={matches} userId={session.user.id} />
         </div>
       </main>
+
+      <MobileNav />
     </div>
   );
 }

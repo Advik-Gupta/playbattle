@@ -171,7 +171,7 @@ const MatchModel: Model<MatchRecord> =
 
 const cached = globalThis as unknown as { mongooseConn?: Promise<typeof mongoose> | null };
 
-async function connect(): Promise<boolean> {
+export async function connect(): Promise<boolean> {
   if (!uri) return false;
   if (mongoose.connection.readyState === 1) return true;
 

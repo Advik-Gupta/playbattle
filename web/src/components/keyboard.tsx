@@ -46,13 +46,13 @@ export function Keyboard({
   return (
     <div className="grid gap-1.5">
       {ROWS.map((row, index) => (
-        <div key={row} className="flex justify-center gap-1.5">
+        <div key={row} className="flex justify-center gap-1 sm:gap-1.5">
           {index === 2 && (
             <button
               type="button"
               onClick={onEnter}
               disabled={disabled}
-              className="h-12 rounded-md bg-accent px-3 text-xs font-semibold uppercase disabled:opacity-50"
+              className="h-12 shrink-0 rounded-md bg-accent px-2 text-[11px] font-semibold uppercase disabled:opacity-50 sm:px-3 sm:text-xs"
             >
               Enter
             </button>
@@ -65,7 +65,7 @@ export function Keyboard({
               onClick={() => onKey(letter)}
               disabled={disabled}
               className={cn(
-                'h-12 flex-1 rounded-md text-sm font-semibold uppercase transition-colors disabled:opacity-50',
+                'h-12 min-w-0 flex-1 rounded-md text-sm font-semibold uppercase transition-colors active:scale-95 disabled:opacity-50',
                 keyboard[letter] ? KEY_STYLE[keyboard[letter]] : 'bg-accent',
               )}
             >
@@ -78,7 +78,7 @@ export function Keyboard({
               type="button"
               onClick={onBackspace}
               disabled={disabled}
-              className="h-12 rounded-md bg-accent px-3 text-xs font-semibold uppercase disabled:opacity-50"
+              className="h-12 shrink-0 rounded-md bg-accent px-2 text-[11px] font-semibold uppercase disabled:opacity-50 sm:px-3 sm:text-xs"
             >
               Del
             </button>

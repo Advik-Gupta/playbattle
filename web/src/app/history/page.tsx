@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { matchPage } from '@/lib/db';
 import { MatchHistory } from '@/components/match-history';
 import { SiteHeader } from '@/components/site-header';
+import { MobileNav } from '@/components/mobile-nav';
 import { Button } from '@/components/ui/button';
 
 const PAGE_SIZE = 20;
@@ -22,7 +23,7 @@ export default async function HistoryPage({
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh pb-20 sm:pb-0">
       <SiteHeader />
 
       <main className="container max-w-3xl py-10">
@@ -44,6 +45,8 @@ export default async function HistoryPage({
           </div>
         )}
       </main>
+
+      <MobileNav />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { ConnectionStatus } from '@/components/connection-status';
 import { Realtime } from '@/components/realtime';
 import { Toaster } from '@/components/toaster';
 import { InviteDialog } from '@/components/invite-dialog';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export async function SiteHeader() {
   const session = await auth();
@@ -27,11 +28,12 @@ export async function SiteHeader() {
           <span className="text-[15px] font-semibold tracking-tight">playbattle</span>
         </Link>
 
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="hidden items-center gap-1 text-sm sm:flex">
           {[
             { href: '/play', label: 'Play' },
             { href: '/rooms', label: 'Rooms' },
             { href: '/players', label: 'Players' },
+            { href: '/dictionary', label: 'Words' },
             { href: '/leaderboard', label: 'Leaderboard' },
             { href: '/profile', label: 'Profile' },
           ].map((item) => (
@@ -46,8 +48,9 @@ export async function SiteHeader() {
         </nav>
 
         {session?.user && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <ConnectionStatus />
+            <ThemeToggle />
             <UserMenu name={name} signOutAction={handleSignOut} />
             <Realtime id={session.user.id} name={name} />
             <Toaster />

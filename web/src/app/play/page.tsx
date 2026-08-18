@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { getProfile } from '@/lib/db';
 import { RoomPanel } from '@/components/room-panel';
 import { SiteHeader } from '@/components/site-header';
+import { MobileNav } from '@/components/mobile-nav';
 
 export default async function PlayPage() {
   const session = await auth();
@@ -11,7 +12,7 @@ export default async function PlayPage() {
   const profile = await getProfile(session.user.id);
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh pb-20 sm:pb-0">
       <SiteHeader />
       <main className="container max-w-xl py-10">
         <h1 className="mb-6 text-2xl font-semibold tracking-tight">
@@ -19,6 +20,8 @@ export default async function PlayPage() {
         </h1>
         <RoomPanel userId={session.user.id} />
       </main>
+
+      <MobileNav />
     </div>
   );
 }

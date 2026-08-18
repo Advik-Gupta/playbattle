@@ -6,6 +6,7 @@ import { useSocket, type GameSocket } from '@/lib/socket';
 import { Board, MiniBoard } from '@/components/board';
 import { Keyboard } from '@/components/keyboard';
 import { Button } from '@/components/ui/button';
+import { DefinitionCard } from '@/components/definition-card';
 
 function useCountdown(deadline: number | null, serverNow: number) {
   const [left, setLeft] = useState<number | null>(null);
@@ -109,8 +110,8 @@ export function GameView({
         )}
       </div>
 
-      <div className="flex gap-6">
-        <div className="w-full max-w-[320px]">
+      <div className="flex flex-col gap-6 sm:flex-row">
+        <div className="mx-auto w-full max-w-[300px] sm:mx-0">
           <Board
             guesses={me?.guesses ?? []}
             draft={locked ? '' : draft}
@@ -216,9 +217,12 @@ export function GameView({
       )}
 
       {room.answer && (
-        <p className="text-center text-sm">
-          The word was <span className="font-semibold uppercase">{room.answer}</span>
-        </p>
+        <div className="space-y-3">
+          <p className="text-center text-sm">
+            The word was <span className="font-semibold uppercase">{room.answer}</span>
+          </p>
+          <DefinitionCard word={room.answer} />
+        </div>
       )}
 
       {error && <p className="text-center text-sm text-red-500">{error}</p>}

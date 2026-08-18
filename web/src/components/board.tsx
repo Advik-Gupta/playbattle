@@ -36,7 +36,7 @@ export function Board({
                 <div
                   key={col}
                   className={cn(
-                    'flex aspect-square items-center justify-center rounded-md border-2 text-2xl font-semibold uppercase',
+                    'flex aspect-square items-center justify-center rounded-md border-2 text-xl font-semibold uppercase transition-colors sm:text-2xl',
                     tile ? TILE_STYLE[tile] : 'border-border',
                     !tile && letter ? 'border-muted-foreground/60' : '',
                   )}

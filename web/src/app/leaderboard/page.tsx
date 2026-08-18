@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { leaderboard } from '@/lib/db';
 import { SiteHeader } from '@/components/site-header';
+import { MobileNav } from '@/components/mobile-nav';
 import { Card, CardContent } from '@/components/ui/card';
 
 export default async function LeaderboardPage() {
@@ -11,7 +12,7 @@ export default async function LeaderboardPage() {
   const players = await leaderboard(20);
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh pb-20 sm:pb-0">
       <SiteHeader />
 
       <main className="container max-w-2xl py-10">
@@ -47,6 +48,8 @@ export default async function LeaderboardPage() {
           </div>
         )}
       </main>
+
+      <MobileNav />
     </div>
   );
 }

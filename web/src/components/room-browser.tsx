@@ -29,8 +29,34 @@ export function RoomBrowser() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
+
+    let id: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (id === null) id = setInterval(load, 5000);
+    };
+
+    const stop = () => {
+      if (id === null) return;
+      clearInterval(id);
+      id = null;
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else {
+        load();
+        start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [load]);
 
   function join(code: string) {

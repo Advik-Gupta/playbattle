@@ -12,6 +12,7 @@ import {
   friendList,
 } from '@/lib/db';
 import { SiteHeader } from '@/components/site-header';
+import { MobileNav } from '@/components/mobile-nav';
 import { FriendList } from '@/components/friend-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -59,7 +60,7 @@ export default async function PlayersPage({
   }
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh pb-20 sm:pb-0">
       <SiteHeader />
 
       <main className="container max-w-2xl space-y-10 py-10">
@@ -147,6 +148,8 @@ export default async function PlayersPage({
           <FriendList friends={friends} removeAction={drop} />
         </section>
       </main>
+
+      <MobileNav />
     </div>
   );
 }

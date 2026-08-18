@@ -2,13 +2,14 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { RoomBrowser } from '@/components/room-browser';
 import { SiteHeader } from '@/components/site-header';
+import { MobileNav } from '@/components/mobile-nav';
 
 export default async function RoomsPage() {
   const session = await auth();
   if (!session?.user?.id) redirect('/signin');
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh pb-20 sm:pb-0">
       <SiteHeader />
 
       <main className="container max-w-2xl py-10">
@@ -19,6 +20,8 @@ export default async function RoomsPage() {
 
         <RoomBrowser />
       </main>
+
+      <MobileNav />
     </div>
   );
 }
