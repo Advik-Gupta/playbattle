@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import type { PlayerCard } from '@/lib/db';
 import type { PresenceEntry, PresenceStatus } from '@/lib/protocol';
 import { useSocket } from '@/lib/socket';
+import Link from 'next/link';
+import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -32,10 +34,12 @@ export function FriendList({
   const [presence, setPresence] = useState<Record<string, PresenceEntry>>({});
   const [sent, setSent] = useState<Record<string, string>>({});
 
+  const watchKey = friends.map((friend) => friend.userId).join(',');
+
   useEffect(() => {
     if (!socket || status !== 'online') return;
 
-    const ids = friends.map((friend) => friend.userId);
+    const ids = watchKey ? watchKey.split(',') : [];
     socket.emit('presence:watch', ids, (res) => {
       if (!res.ok) return;
       setPresence(Object.fromEntries(res.data.map((entry) => [entry.userId, entry])));
@@ -48,7 +52,7 @@ export function FriendList({
     return () => {
       socket.off('presence:update', onUpdate);
     };
-  }, [socket, status, friends]);
+  }, [socket, status, watchKey]);
 
   function invite(userId: string) {
     if (!socket) return;
@@ -77,14 +81,25 @@ export function FriendList({
         return (
           <Card key={friend.userId}>
             <CardContent className="flex items-center justify-between gap-3 p-4">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 text-sm font-medium">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[state]}`} />
-                  <span className="truncate">{friend.displayName}</span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {LABEL[state]} · {friend.won}/{friend.played}
-                </p>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="relative">
+                  <Avatar id={friend.avatar} name={friend.displayName} size={34} />
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card ${DOT[state]}`}
+                  />
+                </span>
+
+                <div className="min-w-0">
+                  <Link
+                    href={`/u/${friend.userId}`}
+                    className="block truncate text-sm font-medium hover:underline"
+                  >
+                    {friend.displayName}
+                  </Link>
+                  <p className="text-xs text-muted-foreground">
+                    {LABEL[state]} · {friend.won}/{friend.played}
+                  </p>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">

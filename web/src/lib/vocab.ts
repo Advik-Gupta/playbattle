@@ -110,21 +110,21 @@ export async function vocabPage(
   page: number,
   size = 24,
 ) {
-  if (!(await connect())) return { words: [] as VocabEntry[], total: 0 };
+  if (!(await connect())) return { words: [] as VocabEntry[], total: 0, page: 1 };
 
   const filter = status === 'all' ? { userId } : { userId, status };
+  const total = await VocabModel.countDocuments(filter).exec();
+  const pages = Math.max(1, Math.ceil(total / size));
+  const safe = Math.min(Math.max(1, page), pages);
 
-  const [docs, total] = await Promise.all([
-    VocabModel.find(filter)
-      .sort({ lastSeen: -1 })
-      .skip(Math.max(0, page - 1) * size)
-      .limit(size)
-      .lean<VocabEntry[]>()
-      .exec(),
-    VocabModel.countDocuments(filter).exec(),
-  ]);
+  const docs = await VocabModel.find(filter)
+    .sort({ lastSeen: -1 })
+    .skip((safe - 1) * size)
+    .limit(size)
+    .lean<VocabEntry[]>()
+    .exec();
 
-  return { words: docs.map(plain), total };
+  return { words: docs.map(plain), total, page: safe };
 }
 
 export async function wordToReview(userId: string): Promise<VocabEntry | null> {

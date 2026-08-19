@@ -78,7 +78,14 @@ export function addMessage(
 }
 
 export function systemMessage(roomCode: string, text: string) {
-  return addMessage(roomCode, { userId: '', name: '', text, flagged: false, system: true });
+  return addMessage(roomCode, {
+    userId: '',
+    name: '',
+    avatar: '',
+    text,
+    flagged: false,
+    system: true,
+  });
 }
 
 export function history(roomCode: string) {

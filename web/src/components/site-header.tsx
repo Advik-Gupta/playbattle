@@ -7,6 +7,7 @@ import { Realtime } from '@/components/realtime';
 import { Toaster } from '@/components/toaster';
 import { InviteDialog } from '@/components/invite-dialog';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Avatar } from '@/components/avatar';
 
 export async function SiteHeader() {
   const session = await auth();
@@ -51,8 +52,8 @@ export async function SiteHeader() {
           <div className="flex items-center gap-2 sm:gap-4">
             <ConnectionStatus />
             <ThemeToggle />
-            <UserMenu name={name} signOutAction={handleSignOut} />
-            <Realtime id={session.user.id} name={name} />
+            <UserMenu name={name} avatar={profile?.avatar ?? ''} signOutAction={handleSignOut} />
+            <Realtime id={session.user.id} name={name} avatar={profile?.avatar ?? ''} />
             <Toaster />
             <InviteDialog />
           </div>

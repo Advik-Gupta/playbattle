@@ -14,8 +14,8 @@ export default async function AdminMatches({
 }) {
   if (!(await isAdmin())) redirect('/admin');
 
-  const page = Math.max(1, Number((await searchParams).page ?? '1') || 1);
-  const { matches, total } = await adminMatchPage(page, PAGE_SIZE);
+  const requested = Math.max(1, Number((await searchParams).page ?? '1') || 1);
+  const { matches, total, page } = await adminMatchPage(requested, PAGE_SIZE);
 
   async function lock() {
     'use server';

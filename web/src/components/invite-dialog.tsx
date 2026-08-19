@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { GameInvite } from '@/lib/protocol';
 import { useSocket } from '@/lib/socket';
 import { gameMeta } from '@/components/games/registry';
+import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 
 export function InviteDialog() {
@@ -45,7 +46,10 @@ export function InviteDialog() {
 
   return (
     <div className="fixed bottom-4 left-4 z-50 w-72 rounded-xl border border-border bg-card p-4 shadow-lg">
-      <p className="text-sm font-medium">{invite.fromName} invited you</p>
+      <div className="flex items-center gap-2">
+        <Avatar id={invite.fromAvatar} name={invite.fromName} size={28} />
+        <p className="text-sm font-medium">{invite.fromName} invited you</p>
+      </div>
       <p className="mt-0.5 text-xs text-muted-foreground">
         {gameMeta(invite.game).name} · room {invite.code}
       </p>

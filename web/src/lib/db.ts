@@ -37,6 +37,7 @@ export interface FriendLink {
 export interface PlayerCard {
   userId: string;
   displayName: string;
+  avatar: string;
   played: number;
   won: number;
   points: number;
@@ -65,6 +66,7 @@ export interface Profile {
   email: string;
   name: string;
   displayName: string;
+  avatar: string;
   stats: Stats;
   solo: SoloStats;
   games?: Record<GameKey, GameTally>;
@@ -111,6 +113,7 @@ const userSchema = new Schema(
     email: { type: String, default: '' },
     name: { type: String, default: '' },
     displayName: { type: String, default: '' },
+    avatar: { type: String, default: 'ember' },
     stats: {
       played: { type: Number, default: 0 },
       won: { type: Number, default: 0 },
@@ -338,27 +341,32 @@ export async function matchCount(userId: string): Promise<number> {
   return MatchModel.countDocuments({ 'players.userId': userId }).exec();
 }
 
+export function clampPage(page: number, total: number, size: number) {
+  const pages = Math.max(1, Math.ceil(total / size));
+  return Math.min(Math.max(1, page), pages);
+}
+
 export async function matchPage(userId: string, page: number, size = 20) {
-  if (!(await connect())) return { matches: [] as MatchRecord[], total: 0 };
+  if (!(await connect())) return { matches: [] as MatchRecord[], total: 0, page: 1 };
 
-  const skip = Math.max(0, page - 1) * size;
-  const [docs, total] = await Promise.all([
-    MatchModel.find({ 'players.userId': userId })
-      .sort({ playedAt: -1 })
-      .skip(skip)
-      .limit(size)
-      .lean<MatchRecord[]>()
-      .exec(),
-    MatchModel.countDocuments({ 'players.userId': userId }).exec(),
-  ]);
+  const filter = { 'players.userId': userId, mode: 'race' as const };
+  const total = await MatchModel.countDocuments(filter).exec();
+  const safe = clampPage(page, total, size);
 
-  return { matches: docs.map(plain), total };
+  const docs = await MatchModel.find(filter)
+    .sort({ playedAt: -1 })
+    .skip((safe - 1) * size)
+    .limit(size)
+    .lean<MatchRecord[]>()
+    .exec();
+
+  return { matches: docs.map(plain), total, page: safe };
 }
 
 export async function leaderboard(limit = 20): Promise<Profile[]> {
   if (!(await connect())) return [];
 
-  const docs = await UserModel.find({ 'stats.played': { $gt: 0 } })
+  const docs = await UserModel.find({ 'stats.played': { $gt: 0 }, banned: { $ne: true } })
     .sort({ 'stats.points': -1, 'stats.won': -1 })
     .limit(limit)
     .lean<Profile[]>()
@@ -378,6 +386,7 @@ function toCard(profile: Profile): PlayerCard {
   return {
     userId: profile.userId,
     displayName: profile.displayName || 'player',
+    avatar: profile.avatar || 'ember',
     played: stats.played,
     won: stats.won,
     points: stats.points,
@@ -405,6 +414,7 @@ export async function searchPlayers(query: string, userId: string): Promise<Play
 
   const docs = await UserModel.find({
     userId: { $ne: userId },
+    banned: { $ne: true },
     displayName: new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
   })
     .limit(20)
@@ -570,7 +580,7 @@ export interface AdminUser extends PlayerCard {
 }
 
 export async function adminUserPage(query: string, page: number, size = 20) {
-  if (!(await connect())) return { users: [] as AdminUser[], total: 0 };
+  if (!(await connect())) return { users: [] as AdminUser[], total: 0, page: 1 };
 
   const term = query.trim();
   const filter = term
@@ -582,15 +592,15 @@ export async function adminUserPage(query: string, page: number, size = 20) {
       }
     : {};
 
-  const [docs, total] = await Promise.all([
-    UserModel.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(Math.max(0, page - 1) * size)
-      .limit(size)
-      .lean<(Profile & { banned?: boolean; createdAt?: Date })[]>()
-      .exec(),
-    UserModel.countDocuments(filter).exec(),
-  ]);
+  const total = await UserModel.countDocuments(filter).exec();
+  const safe = clampPage(page, total, size);
+
+  const docs = await UserModel.find(filter)
+    .sort({ createdAt: -1 })
+    .skip((safe - 1) * size)
+    .limit(size)
+    .lean<(Profile & { banned?: boolean; createdAt?: Date })[]>()
+    .exec();
 
   const users = docs.map((doc) => {
     const profile = plain(doc);
@@ -605,23 +615,23 @@ export async function adminUserPage(query: string, page: number, size = 20) {
     };
   });
 
-  return { users, total };
+  return { users, total, page: safe };
 }
 
 export async function adminMatchPage(page: number, size = 20) {
-  if (!(await connect())) return { matches: [] as MatchRecord[], total: 0 };
+  if (!(await connect())) return { matches: [] as MatchRecord[], total: 0, page: 1 };
 
-  const [docs, total] = await Promise.all([
-    MatchModel.find({})
-      .sort({ playedAt: -1 })
-      .skip(Math.max(0, page - 1) * size)
-      .limit(size)
-      .lean<MatchRecord[]>()
-      .exec(),
-    MatchModel.countDocuments({}).exec(),
-  ]);
+  const total = await MatchModel.countDocuments({}).exec();
+  const safe = clampPage(page, total, size);
 
-  return { matches: docs.map(plain), total };
+  const docs = await MatchModel.find({})
+    .sort({ playedAt: -1 })
+    .skip((safe - 1) * size)
+    .limit(size)
+    .lean<MatchRecord[]>()
+    .exec();
+
+  return { matches: docs.map(plain), total, page: safe };
 }
 
 export async function setBanned(userId: string, banned: boolean) {
@@ -636,4 +646,127 @@ export async function bannedIds(): Promise<string[]> {
 
   const docs = await UserModel.find({ banned: true }).select({ userId: 1 }).lean<{ userId: string }[]>().exec();
   return docs.map((doc) => doc.userId);
+}
+
+export interface ProfileSeries {
+  points: number[];
+  form: ('win' | 'loss' | 'draw')[];
+  guessSpread: { key: string; value: number }[];
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+export async function profileSeries(userId: string, limit = 20): Promise<ProfileSeries> {
+  const blank: ProfileSeries = {
+    points: [],
+    form: [],
+    guessSpread: [1, 2, 3, 4, 5, 6, 7].map((key) => ({ key: String(key), value: 0 })),
+    wins: 0,
+    losses: 0,
+    draws: 0,
+  };
+
+  if (!(await connect())) return blank;
+
+  const docs = await MatchModel.find({ 'players.userId': userId, mode: 'race' })
+    .sort({ playedAt: -1 })
+    .limit(limit)
+    .lean<MatchRecord[]>()
+    .exec();
+
+  const matches = docs.reverse();
+  const spread = new Map<number, number>();
+
+  let running = 0;
+
+  for (const match of matches) {
+    const me = match.players.find((player) => player.userId === userId);
+    running += me?.score ?? 0;
+    blank.points.push(running);
+
+    if (match.winnerId === userId) {
+      blank.form.push('win');
+      blank.wins += 1;
+    } else if (match.winnerId === null) {
+      blank.form.push('draw');
+      blank.draws += 1;
+    } else {
+      blank.form.push('loss');
+      blank.losses += 1;
+    }
+
+    for (const round of match.rounds ?? []) {
+      const board = round.boards?.find((entry) => entry.playerId === userId);
+      if (!board?.solved) continue;
+
+      const count = Math.min(7, Math.max(1, board.words.length));
+      spread.set(count, (spread.get(count) ?? 0) + 1);
+    }
+  }
+
+  blank.guessSpread = [1, 2, 3, 4, 5, 6, 7].map((key) => ({
+    key: String(key),
+    value: spread.get(key) ?? 0,
+  }));
+
+  blank.form.reverse();
+  return blank;
+}
+
+export async function publicProfile(userId: string) {
+  if (!(await connect())) return null;
+
+  const doc = await UserModel.findOne({ userId, banned: { $ne: true } }).lean<Profile>().exec();
+  if (!doc) return null;
+
+  const profile = plain(doc);
+  profile.stats = { ...EMPTY_STATS, ...(profile.stats ?? {}) };
+  profile.solo = { ...EMPTY_SOLO, ...(profile.solo ?? {}) };
+
+  return profile;
+}
+
+export async function friendState(userId: string, otherId: string) {
+  if (!(await connect())) return 'none' as const;
+
+  const link = await FriendModel.findOne({
+    $or: [
+      { fromId: userId, toId: otherId },
+      { fromId: otherId, toId: userId },
+    ],
+  })
+    .lean<FriendLink>()
+    .exec();
+
+  if (!link) return 'none' as const;
+  if (link.status === 'accepted') return 'friends' as const;
+
+  return link.fromId === userId ? ('sent' as const) : ('incoming' as const);
+}
+
+export async function gameLeaderboard(game: GameKey, limit = 20) {
+  if (!(await connect())) return [];
+
+  const docs = await UserModel.find({
+    [`games.${game}.played`]: { $gt: 0 },
+    banned: { $ne: true },
+  })
+    .sort({ [`games.${game}.won`]: -1, [`games.${game}.played`]: 1 })
+    .limit(limit)
+    .lean<Profile[]>()
+    .exec();
+
+  return docs.map((doc) => {
+    const profile = plain(doc);
+    const tally = profile.games?.[game] ?? { played: 0, won: 0 };
+
+    return {
+      userId: profile.userId,
+      displayName: profile.displayName || 'player',
+      avatar: profile.avatar || 'ember',
+      played: tally.played,
+      won: tally.won,
+    };
+  });
 }

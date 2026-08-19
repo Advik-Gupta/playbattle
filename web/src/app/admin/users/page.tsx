@@ -19,9 +19,9 @@ export default async function AdminUsers({
   if (!(await isAdmin())) redirect('/admin');
 
   const params = await searchParams;
-  const page = Math.max(1, Number(params.page ?? '1') || 1);
+  const requested = Math.max(1, Number(params.page ?? '1') || 1);
   const query = params.q?.trim() ?? '';
-  const { users, total } = await adminUserPage(query, page, PAGE_SIZE);
+  const { users, total, page } = await adminUserPage(query, requested, PAGE_SIZE);
 
   async function lock() {
     'use server';

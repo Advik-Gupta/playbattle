@@ -7,6 +7,7 @@ import { CONFIG_LIMITS, type GameId, type RoomConfig } from '@/lib/protocol';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Avatar } from '@/components/avatar';
 import { GameView } from '@/components/games/game-view';
 import { GAME_LIST, gameMeta } from '@/components/games/registry';
 import { ChatBox } from '@/components/chat-box';
@@ -204,13 +205,16 @@ export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
               className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
             >
               <span className="flex items-center gap-2 text-sm font-medium">
-                <span
-                  className={
-                    player.connected
-                      ? 'h-2 w-2 rounded-full bg-emerald-500'
-                      : 'h-2 w-2 rounded-full bg-muted-foreground'
-                  }
-                />
+                <span className="relative">
+                  <Avatar id={player.profile.avatar} name={player.profile.name} size={28} />
+                  <span
+                    className={
+                      player.connected
+                        ? 'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-emerald-500'
+                        : 'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-muted-foreground'
+                    }
+                  />
+                </span>
                 {player.profile.name}
                 {player.profile.id === room.hostId && (
                   <span className="text-xs text-muted-foreground">host</span>

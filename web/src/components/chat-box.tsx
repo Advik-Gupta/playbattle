@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CHAT_LIMIT, type ChatMessage } from '@/lib/protocol';
 import { useSocket } from '@/lib/socket';
+import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -47,7 +48,9 @@ export function ChatBox({ userId }: { userId: string }) {
               {message.text}
             </p>
           ) : (
-            <div key={message.id} className="text-sm">
+            <div key={message.id} className="flex items-start gap-2 text-sm">
+              <Avatar id={message.avatar} name={message.name} size={20} className="mt-0.5" />
+              <span className="min-w-0 flex-1">
               <span
                 className={
                   message.userId === userId
@@ -61,6 +64,7 @@ export function ChatBox({ userId }: { userId: string }) {
               {message.flagged && message.userId === userId && (
                 <span className="ml-1 text-xs text-amber-500">(filtered)</span>
               )}
+              </span>
             </div>
           ),
         )}

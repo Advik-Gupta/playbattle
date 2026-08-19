@@ -73,9 +73,27 @@ export const MAX_HINTS = 2;
 export const ROOM_CODE_LENGTH = 5;
 export const MAX_ROOM_PLAYERS = 4;
 
+export const AVATAR_IDS = [
+  'ember',
+  'moss',
+  'tide',
+  'plum',
+  'rust',
+  'sand',
+  'slate',
+  'mint',
+  'berry',
+  'ink',
+  'lime',
+  'dusk',
+] as const;
+
+export const DEFAULT_AVATAR_ID = AVATAR_IDS[0];
+
 export interface PlayerProfile {
   id: string;
   name: string;
+  avatar: string;
 }
 
 export interface HintReveal {
@@ -182,6 +200,7 @@ export interface ChatMessage {
   id: string;
   userId: string;
   name: string;
+  avatar: string;
   text: string;
   at: number;
   flagged: boolean;
@@ -191,6 +210,7 @@ export interface ChatMessage {
 export interface GameInvite {
   fromId: string;
   fromName: string;
+  fromAvatar: string;
   code: string;
   mode: GameMode;
   game: GameId;

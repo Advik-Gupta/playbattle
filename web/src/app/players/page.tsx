@@ -13,6 +13,8 @@ import {
 } from '@/lib/db';
 import { SiteHeader } from '@/components/site-header';
 import { MobileNav } from '@/components/mobile-nav';
+import Link from 'next/link';
+import { Avatar } from '@/components/avatar';
 import { FriendList } from '@/components/friend-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -86,11 +88,19 @@ export default async function PlayersPage({
               return (
                 <Card key={player.userId}>
                   <CardContent className="flex items-center justify-between gap-4 p-4">
-                    <div>
-                      <p className="text-sm font-medium">{player.displayName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {player.won}/{player.played} wins · {player.points} points
-                      </p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar id={player.avatar} name={player.displayName} size={34} />
+                      <div className="min-w-0">
+                        <Link
+                          href={`/u/${player.userId}`}
+                          className="block truncate text-sm font-medium hover:underline"
+                        >
+                          {player.displayName}
+                        </Link>
+                        <p className="text-xs text-muted-foreground">
+                          {player.won}/{player.played} wins · {player.points} points
+                        </p>
+                      </div>
                     </div>
 
                     {isFriend ? (
@@ -119,7 +129,10 @@ export default async function PlayersPage({
               {requests.map((player) => (
                 <Card key={player.userId}>
                   <CardContent className="flex items-center justify-between gap-4 p-4">
-                    <p className="text-sm font-medium">{player.displayName}</p>
+                    <span className="flex items-center gap-3">
+                      <Avatar id={player.avatar} name={player.displayName} size={34} />
+                      <span className="text-sm font-medium">{player.displayName}</span>
+                    </span>
                     <div className="flex gap-2">
                       <form action={respond}>
                         <input type="hidden" name="userId" value={player.userId} />

@@ -27,13 +27,13 @@ export default async function DictionaryPage({
 
   const userId = session.user.id;
   const params = await searchParams;
-  const page = Math.max(1, Number(params.page ?? '1') || 1);
+  const requested = Math.max(1, Number(params.page ?? '1') || 1);
   const status = (
     FILTERS.some((filter) => filter.value === params.status) ? params.status : 'all'
   ) as WordStatus | 'all';
 
-  const [{ words, total }, counts] = await Promise.all([
-    vocabPage(userId, status, page, PAGE_SIZE),
+  const [{ words, total, page }, counts] = await Promise.all([
+    vocabPage(userId, status, requested, PAGE_SIZE),
     vocabCounts(userId),
   ]);
 

@@ -18,8 +18,8 @@ export default async function HistoryPage({
   if (!session?.user?.id) redirect('/signin');
 
   const params = await searchParams;
-  const page = Math.max(1, Number(params.page ?? '1') || 1);
-  const { matches, total } = await matchPage(session.user.id, page, PAGE_SIZE);
+  const requested = Math.max(1, Number(params.page ?? '1') || 1);
+  const { matches, total, page } = await matchPage(session.user.id, requested, PAGE_SIZE);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (

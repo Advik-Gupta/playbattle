@@ -5,7 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import { Server } from 'socket.io';
-import { CPU_ID } from './protocol.js';
+import { AVATAR_IDS, CPU_ID, DEFAULT_AVATAR_ID } from './protocol.js';
 import type {
   ClientToServerEvents,
   PlayerProfile,
@@ -154,9 +154,18 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, never, SocketD
 
 function readProfile(raw: unknown): PlayerProfile | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { id, name } = raw as Record<string, unknown>;
+
+  const { id, name, avatar } = raw as Record<string, unknown>;
   if (typeof id !== 'string' || id.length === 0) return null;
-  return { id, name: typeof name === 'string' && name ? name.slice(0, 20) : 'player' };
+
+  return {
+    id,
+    name: typeof name === 'string' && name ? name.slice(0, 20) : 'player',
+    avatar:
+      typeof avatar === 'string' && (AVATAR_IDS as readonly string[]).includes(avatar)
+        ? avatar
+        : DEFAULT_AVATAR_ID,
+  };
 }
 
 io.use(async (socket, next) => {
@@ -512,6 +521,7 @@ io.on('connection', (socket) => {
       io.to(socketId).emit('invite:received', {
         fromId: profile.id,
         fromName: profile.name,
+        fromAvatar: profile.avatar,
         code: room.code,
         mode: room.config.mode,
         game: room.config.game,
@@ -538,6 +548,7 @@ io.on('connection', (socket) => {
     const message = addMessage(code, {
       userId: profile.id,
       name: profile.name,
+      avatar: profile.avatar,
       text: flagged ? mask(body) : body,
       flagged,
       system: false,

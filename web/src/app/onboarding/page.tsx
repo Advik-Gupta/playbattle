@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { displayNameTaken, getProfile, saveProfile } from '@/lib/db';
+import { DEFAULT_AVATAR, isAvatarId } from '@/lib/avatars';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { AvatarPicker } from '@/components/avatar-picker';
 
 const MESSAGES: Record<string, string> = {
   short: 'Names need at least two characters.',
@@ -39,8 +41,11 @@ export default async function Onboarding({
       redirect('/onboarding?error=taken');
     }
 
+    const avatar = String(formData.get('avatar') ?? '');
+
     await saveProfile(current.user.id, {
       displayName,
+      avatar: isAvatarId(avatar) ? avatar : DEFAULT_AVATAR,
       email: current.user.email ?? '',
       name: current.user.name ?? '',
     });
@@ -68,6 +73,8 @@ export default async function Onboarding({
               defaultValue={session.user.name ?? ''}
               required
             />
+            <AvatarPicker name="avatar" defaultValue={DEFAULT_AVATAR} />
+
             {error && <p className="text-sm text-red-500">{MESSAGES[error] ?? 'Try again.'}</p>}
             <Button type="submit" size="lg">
               continue
