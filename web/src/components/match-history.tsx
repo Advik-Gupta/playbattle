@@ -1,4 +1,5 @@
 import type { MatchRecord } from '@/lib/db';
+import { gameMeta } from '@/components/games/registry';
 import { Card, CardContent } from '@/components/ui/card';
 
 function when(value: string) {
@@ -44,7 +45,8 @@ export function MatchHistory({
                   vs {others.map((player) => player.name).join(', ') || 'nobody'}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {match.rounds.length} rounds · {when(match.playedAt)}
+                  {gameMeta(match.game ?? 'wordbattle').name} · {match.rounds.length} rounds ·{' '}
+                  {when(match.playedAt)}
                 </p>
               </div>
 

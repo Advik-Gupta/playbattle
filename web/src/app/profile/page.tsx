@@ -6,6 +6,8 @@ import { MatchHistory } from '@/components/match-history';
 import { SiteHeader } from '@/components/site-header';
 import { MobileNav } from '@/components/mobile-nav';
 import { StatTile } from '@/components/stat-tile';
+import { GAME_LIST } from '@/components/games/registry';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
 export default async function ProfilePage() {
@@ -48,6 +50,33 @@ export default async function ProfilePage() {
           <StatTile label="Words solved" value={String(stats.solves)} />
           <StatTile label="Avg guesses" value={avgGuesses} />
           <StatTile label="Best streak" value={String(stats.bestStreak)} />
+        </div>
+
+        <div className="mt-10">
+          <h2 className="mb-3 text-lg font-semibold tracking-tight">By game</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {GAME_LIST.map((game) => {
+              const tally = profile?.games?.[game.id] ?? { played: 0, won: 0 };
+              const rate = tally.played > 0 ? Math.round((tally.won / tally.played) * 100) : 0;
+              const Icon = game.icon;
+
+              return (
+                <Card key={game.id}>
+                  <CardContent className="flex items-center gap-4 p-4">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{game.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {tally.played} played · {tally.won} won · {rate}%
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
 
         <div className="mt-10">

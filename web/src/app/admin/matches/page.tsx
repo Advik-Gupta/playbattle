@@ -45,8 +45,10 @@ export default async function AdminMatches({
                     {match.players.map((player) => `${player.name} (${player.score})`).join(' vs ')}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {match.mode} · {match.rounds.length} rounds ·{' '}
-                    {match.rounds.map((round) => round.answer).join(', ')}
+                    {match.game ?? 'wordbattle'} · {match.mode} · {match.rounds.length} rounds
+                    {match.rounds.some((round) => round.answer)
+                      ? ` · ${match.rounds.map((round) => round.answer).filter(Boolean).join(', ')}`
+                      : ''}
                   </p>
                 </div>
 

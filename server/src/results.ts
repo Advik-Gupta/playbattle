@@ -13,6 +13,7 @@ export async function reportMatch(room: Room, matchId: string) {
     matchId,
     code: room.code,
     mode: room.config.mode,
+    game: room.config.game,
     players: [...room.players.values()].map((player) => ({
       userId: player.profile.id,
       name: player.profile.name,
@@ -23,6 +24,8 @@ export async function reportMatch(room: Room, matchId: string) {
       round: round.round,
       answer: round.answer,
       winnerId: round.winnerId,
+      draw: round.draw,
+      ttt: round.ttt ?? null,
       boards: round.boards.map((board) => ({
         playerId: board.playerId,
         words: board.guesses.map((guess) => guess.word),

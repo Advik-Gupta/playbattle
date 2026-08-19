@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import { Server } from 'socket.io';
+import { CPU_ID } from './protocol.js';
 import type {
   ClientToServerEvents,
   PlayerProfile,
@@ -50,6 +51,7 @@ import {
   joinRoom,
   leaveQueue,
   leaveRoom,
+  makeMove,
   markDisconnected,
   queueSize,
   reapAbsent,
@@ -65,6 +67,7 @@ import {
   setReady,
   startRound,
   submitGuess,
+  takeCpuTurn,
   takeHint,
   votekick,
   sweepEmptyRooms,
@@ -193,6 +196,20 @@ function maybeStart(room: Room) {
   startRound(room);
   io.to(room.code).emit('game:roundStart', room.round);
   push(room);
+  scheduleCpu(room);
+}
+
+function scheduleCpu(room: Room) {
+  if (room.config.mode !== 'solo' || room.config.game !== 'tictactoe') return;
+  if (room.ttt?.turnId !== CPU_ID) return;
+
+  setTimeout(() => {
+    const result = takeCpuTurn(room.code);
+    if (!result) return;
+
+    push(result.room);
+    if (result.done) finishRound(result.room);
+  }, 600);
 }
 
 function finishRound(room: Room) {
@@ -215,6 +232,7 @@ function finishRound(room: Room) {
     startRound(live);
     io.to(live.code).emit('game:roundStart', live.round);
     push(live);
+    scheduleCpu(live);
   }, ROUND_BREAK);
 }
 
@@ -278,6 +296,7 @@ io.on('connection', (socket) => {
     enterRoom(room.code);
     push(room);
     socket.emit('game:roundStart', room.round);
+    scheduleCpu(room);
     ack({ ok: true, data: { code: room.code } });
   });
 
@@ -404,6 +423,24 @@ io.on('connection', (socket) => {
     ack({ ok: true, data: null });
   });
 
+  socket.on('game:move', (index, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = makeMove(code, profile.id, Number(index));
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    push(result.room);
+    ack({ ok: true, data: null });
+
+    if (result.done) {
+      finishRound(result.room);
+      return;
+    }
+
+    scheduleCpu(result.room);
+  });
+
   socket.on('game:skip', (ack) => {
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
@@ -417,10 +454,11 @@ io.on('connection', (socket) => {
     if (result.done) finishRound(result.room);
   });
 
-  socket.on('room:quickmatch', (ack) => {
+  socket.on('room:quickmatch', (game, ack) => {
     exitCurrent();
 
-    const result = joinQueue(profile, socket.id);
+    const wanted = game === 'tictactoe' ? 'tictactoe' : 'wordbattle';
+    const result = joinQueue(profile, socket.id, wanted);
     if (result.waiting) return ack({ ok: true, data: { code: '', waiting: true } });
 
     const { room, opponent } = result;
@@ -476,6 +514,7 @@ io.on('connection', (socket) => {
         fromName: profile.name,
         code: room.code,
         mode: room.config.mode,
+        game: room.config.game,
       });
     }
 

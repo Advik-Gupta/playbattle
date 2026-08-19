@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import { CPU_ID } from './protocol.js';
 import {
   CONFIG_LIMITS,
   DEFAULT_CONFIG,
@@ -6,6 +7,8 @@ import {
   MAX_ROOM_PLAYERS,
   ROOM_CODE_LENGTH,
   SOLO_CONFIG,
+  TICTACTOE_CONFIG,
+  TICTACTOE_SOLO_CONFIG,
   VOTEKICK_MS,
   WORD_LENGTH,
   type HintReveal,
@@ -15,12 +18,16 @@ import {
   type RoomConfig,
   type RoomPhase,
   type RoomState,
+  type GameId,
   type OpenRoom,
   type RoundSummary,
+  type TicTacToeState,
   type VoteKick,
   type Tile,
 } from './protocol.js';
-import { mergeKeyboard, pointsFor, scoreGuess, solved } from './game.js';
+import { gameFor } from './games/index.js';
+import { mergeKeyboard, pointsFor, scoreGuess, solved } from './games/wordbattle.js';
+import { applyMove, cpuMove, pointsForRound } from './games/tictactoe.js';
 import { isWord, randomWord } from './words.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -53,8 +60,10 @@ export interface Room {
   answer: string | null;
   roundStartedAt: number | null;
   usedAnswers: string[];
+  ttt: TicTacToeState | null;
   history: RoundSummary[];
   matchWinnerId: string | null;
+  matchDraw: boolean;
   matchId: string;
   votekicks: VoteKick[];
   banned: Set<string>;
@@ -77,9 +86,30 @@ function pick<T extends number>(allowed: readonly T[], value: unknown, fallback:
 }
 
 export function sanitizeConfig(input: Partial<RoomConfig> = {}): RoomConfig {
+  const game: GameId = input.game === 'tictactoe' ? 'tictactoe' : 'wordbattle';
+
+  if (game === 'tictactoe') {
+    const solo = input.mode === 'solo';
+
+    return {
+      game,
+      mode: solo ? 'solo' : 'race',
+      rounds: pick(CONFIG_LIMITS.rounds, input.rounds, TICTACTOE_CONFIG.rounds),
+      secondsPerRound: pick(
+        CONFIG_LIMITS.secondsPerRound,
+        input.secondsPerRound,
+        TICTACTOE_CONFIG.secondsPerRound,
+      ),
+      maxGuesses: 0,
+      maxPlayers: solo ? TICTACTOE_SOLO_CONFIG.maxPlayers : TICTACTOE_CONFIG.maxPlayers,
+      visibility: input.visibility === 'open' ? 'open' : 'private',
+    };
+  }
+
   if (input.mode === 'solo') return { ...SOLO_CONFIG };
 
   return {
+    game,
     mode: 'race',
     rounds: pick(CONFIG_LIMITS.rounds, input.rounds, DEFAULT_CONFIG.rounds),
     secondsPerRound: pick(
@@ -139,8 +169,10 @@ export function createRoom(profile: PlayerProfile, socketId: string, config: Par
     answer: null,
     roundStartedAt: null,
     usedAnswers: [],
+    ttt: null,
     history: [],
     matchWinnerId: null,
+    matchDraw: false,
     matchId: randomUUID(),
     votekicks: [],
     banned: new Set<string>(),
@@ -260,6 +292,7 @@ export function openRooms(): OpenRoom[] {
     )
     .map((room) => ({
       code: room.code,
+      game: room.config.game,
       hostName: room.players.get(room.hostId)?.profile.name ?? 'someone',
       players: room.players.size,
       maxPlayers: room.config.maxPlayers,
@@ -307,7 +340,9 @@ export function serialize(room: Room, viewerId: string): RoomState {
     history: room.history,
     answer: roundDone || viewerFinished ? room.answer : null,
     matchWinnerId: room.matchWinnerId,
+    matchDraw: room.matchDraw,
     votekicks: room.votekicks,
+    ttt: room.ttt,
   };
 }
 
@@ -404,20 +439,21 @@ export function takeHint(code: string, userId: string) {
 
 export function startRound(room: Room) {
   room.round += 1;
-  room.answer = randomWord(room.usedAnswers);
-  room.usedAnswers.push(room.answer);
   room.phase = 'playing';
   room.roundStartedAt = Date.now();
   room.deadline =
     room.config.secondsPerRound > 0 ? Date.now() + room.config.secondsPerRound * 1000 : null;
 
   resetBoards(room);
+  gameFor(room.config.game).startRound(room);
+
   return room;
 }
 
 export function submitGuess(code: string, userId: string, raw: string) {
   const room = getRoom(code);
   if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.config.game !== 'wordbattle') return { ok: false, error: 'wrong game' } as const;
   if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
 
   const player = room.players.get(userId);
@@ -447,46 +483,79 @@ export function submitGuess(code: string, userId: string, raw: string) {
 }
 
 export function roundIsOver(room: Room) {
-  const active = [...room.players.values()].filter((player) => player.socketId !== null);
-  if (active.length === 0) return true;
+  if ([...room.players.values()].every((player) => player.socketId === null)) return true;
 
-  return active.every(
-    (player) =>
-      player.solved || player.resigned || player.guesses.length >= room.config.maxGuesses,
-  );
+  return gameFor(room.config.game).isRoundOver(room);
 }
 
 export function endRound(room: Room): RoundSummary {
-  const winner = [...room.players.values()]
-    .filter((p) => p.solved)
-    .sort((a, b) => (a.solveMs ?? 0) - (b.solveMs ?? 0))[0];
+  const summary = gameFor(room.config.game).summarize(room);
 
-  const summary: RoundSummary = {
-    round: room.round,
-    answer: room.answer ?? '',
-    winnerId: winner?.profile.id ?? null,
-    boards: [...room.players.values()].map((player) => ({
-      playerId: player.profile.id,
-      guesses: player.guesses,
-      solved: player.solved,
-      solveMs: player.solveMs,
-      hints: player.hints.length,
-    })),
-  };
+  if (room.config.game === 'tictactoe') {
+    for (const player of room.players.values()) {
+      const won = summary.winnerId === player.profile.id;
+      player.score += pointsForRound(won, summary.draw);
+    }
+  }
 
   room.history.push(summary);
   room.deadline = null;
 
   if (room.round >= room.config.rounds) {
     room.phase = 'match_over';
-    const ranked = [...room.players.values()].sort((a, b) => b.score - a.score);
-    const tied = ranked.length > 1 && ranked[0].score === ranked[1].score;
-    room.matchWinnerId = tied ? null : (ranked[0]?.profile.id ?? null);
+
+    if (room.config.mode === 'solo' && room.config.game === 'tictactoe') {
+      const tally = new Map<string, number>();
+      for (const past of room.history) {
+        if (!past.winnerId) continue;
+        tally.set(past.winnerId, (tally.get(past.winnerId) ?? 0) + 1);
+      }
+
+      const human = [...room.players.keys()][0] ?? null;
+      const mine = human ? (tally.get(human) ?? 0) : 0;
+      const theirs = tally.get(CPU_ID) ?? 0;
+
+      room.matchDraw = mine === theirs;
+      room.matchWinnerId = mine === theirs ? null : mine > theirs ? human : CPU_ID;
+    } else {
+      const ranked = [...room.players.values()].sort((a, b) => b.score - a.score);
+      const tied = ranked.length > 1 && ranked[0].score === ranked[1].score;
+
+      room.matchDraw = tied || ranked.length === 0;
+      room.matchWinnerId = tied ? null : (ranked[0]?.profile.id ?? null);
+    }
   } else {
     room.phase = 'round_over';
   }
 
   return summary;
+}
+
+export function makeMove(code: string, userId: string, index: number) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.config.game !== 'tictactoe') return { ok: false, error: 'wrong game' } as const;
+  if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
+  if (!room.players.has(userId)) return { ok: false, error: 'not in this room' } as const;
+
+  const result = applyMove(room, userId, index);
+  if (!result.ok) return { ok: false, error: result.error } as const;
+
+  return { ok: true, room, done: result.decided } as const;
+}
+
+export function takeCpuTurn(code: string) {
+  const room = getRoom(code);
+  if (!room || room.config.mode !== 'solo' || room.config.game !== 'tictactoe') return null;
+  if (room.phase !== 'playing') return null;
+
+  const index = cpuMove(room);
+  if (index === null) return null;
+
+  const result = applyMove(room, CPU_ID, index);
+  if (!result.ok) return null;
+
+  return { room, done: result.decided };
 }
 
 export function rematch(code: string, userId: string) {
@@ -501,6 +570,7 @@ export function rematch(code: string, userId: string) {
   room.history = [];
   room.usedAnswers = [];
   room.matchWinnerId = null;
+  room.matchDraw = false;
   room.matchId = randomUUID();
   resetBoards(room);
   for (const player of room.players.values()) {
@@ -514,6 +584,7 @@ export function rematch(code: string, userId: string) {
 export function resign(code: string, userId: string) {
   const room = getRoom(code);
   if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.config.game !== 'wordbattle') return { ok: false, error: 'wrong game' } as const;
   if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
 
   const player = room.players.get(userId);
@@ -600,11 +671,21 @@ interface Waiting {
   since: number;
 }
 
-const queue: Waiting[] = [];
+const queues = new Map<GameId, Waiting[]>();
 
-export function joinQueue(profile: PlayerProfile, socketId: string) {
+function queueFor(game: GameId) {
+  const existing = queues.get(game);
+  if (existing) return existing;
+
+  const fresh: Waiting[] = [];
+  queues.set(game, fresh);
+  return fresh;
+}
+
+export function joinQueue(profile: PlayerProfile, socketId: string, game: GameId) {
   leaveQueue(profile.id);
 
+  const queue = queueFor(game);
   const opponent = queue.shift();
 
   if (!opponent) {
@@ -613,11 +694,8 @@ export function joinQueue(profile: PlayerProfile, socketId: string) {
   }
 
   const room = createRoom(opponent.profile, opponent.socketId, {
+    game,
     mode: 'race',
-    rounds: 3,
-    secondsPerRound: 120,
-    maxGuesses: 6,
-    maxPlayers: 2,
     visibility: 'private',
   });
 
@@ -627,13 +705,21 @@ export function joinQueue(profile: PlayerProfile, socketId: string) {
 }
 
 export function leaveQueue(userId: string) {
-  const index = queue.findIndex((entry) => entry.profile.id === userId);
-  if (index === -1) return false;
+  let removed = false;
 
-  queue.splice(index, 1);
-  return true;
+  for (const queue of queues.values()) {
+    const index = queue.findIndex((entry) => entry.profile.id === userId);
+    if (index === -1) continue;
+
+    queue.splice(index, 1);
+    removed = true;
+  }
+
+  return removed;
 }
 
 export function queueSize() {
-  return queue.length;
+  let total = 0;
+  for (const queue of queues.values()) total += queue.length;
+  return total;
 }

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MAX_HINTS, WORD_LENGTH, type RoomState } from '@/lib/protocol';
 import { useSocket, type GameSocket } from '@/lib/socket';
-import { Board, MiniBoard } from '@/components/board';
-import { Keyboard } from '@/components/keyboard';
+import { Board, MiniBoard } from '@/components/games/wordbattle/board';
+import { Keyboard } from '@/components/games/wordbattle/keyboard';
 import { Button } from '@/components/ui/button';
 import { DefinitionCard } from '@/components/definition-card';
 
@@ -33,7 +33,7 @@ function useCountdown(deadline: number | null, serverNow: number) {
   return left;
 }
 
-export function GameView({
+export function WordBattleView({
   room,
   socket,
   userId,

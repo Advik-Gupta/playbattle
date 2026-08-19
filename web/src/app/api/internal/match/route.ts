@@ -28,6 +28,7 @@ export async function POST(request: Request) {
     matchId: body.matchId,
     code: body.code ?? '',
     mode: body.mode === 'solo' ? 'solo' : 'race',
+    game: body.game === 'tictactoe' ? 'tictactoe' : 'wordbattle',
     players: body.players,
     winnerId: body.winnerId ?? null,
     rounds: Array.isArray(body.rounds) ? body.rounds : [],

@@ -1,15 +1,18 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { useSocket } from '@/lib/socket';
-import { CONFIG_LIMITS, type RoomConfig } from '@/lib/protocol';
+import { CONFIG_LIMITS, type GameId, type RoomConfig } from '@/lib/protocol';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { GameView } from '@/components/game-view';
+import { GameView } from '@/components/games/game-view';
+import { GAME_LIST, gameMeta } from '@/components/games/registry';
 import { ChatBox } from '@/components/chat-box';
 
-export function RoomPanel({ userId }: { userId: string }) {
+export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
+  const meta = gameMeta(game);
   const socket = useSocket((s) => s.socket);
   const status = useSocket((s) => s.status);
   const room = useSocket((s) => s.room);
@@ -26,7 +29,7 @@ export function RoomPanel({ userId }: { userId: string }) {
     if (!socket) return;
     setError('');
 
-    socket.emit('room:quickmatch', (res) => {
+    socket.emit('room:quickmatch', game, (res) => {
       if (!res.ok) setError(res.error);
       else setQueued(res.data.waiting);
     });
@@ -40,7 +43,7 @@ export function RoomPanel({ userId }: { userId: string }) {
     if (!socket) return;
     setBusy(true);
     setError('');
-    socket.emit('room:solo', {}, (res) => {
+    socket.emit('room:solo', { game }, (res) => {
       setBusy(false);
       if (!res.ok) setError(res.error);
     });
@@ -50,7 +53,7 @@ export function RoomPanel({ userId }: { userId: string }) {
     if (!socket) return;
     setBusy(true);
     setError('');
-    socket.emit('room:create', {}, (res) => {
+    socket.emit('room:create', { game }, (res) => {
       setBusy(false);
       if (!res.ok) setError(res.error);
     });
@@ -93,10 +96,21 @@ export function RoomPanel({ userId }: { userId: string }) {
       <Card>
         <CardContent className="space-y-6 p-6">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">Start a room</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Make one and share the code, or drop into a friend&apos;s.
-            </p>
+            <h2 className="text-lg font-semibold tracking-tight">{meta.name}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+          </div>
+
+          <div className="flex gap-2">
+            {GAME_LIST.map((entry) => (
+              <Button
+                key={entry.id}
+                asChild
+                size="sm"
+                variant={entry.id === game ? 'default' : 'outline'}
+              >
+                <Link href={`/play/${entry.id}`}>{entry.name}</Link>
+              </Button>
+            ))}
           </div>
 
           {queued ? (
@@ -116,14 +130,16 @@ export function RoomPanel({ userId }: { userId: string }) {
             Create room
           </Button>
 
-          <Button
-            onClick={solo}
-            variant="outline"
-            disabled={offline || busy}
-            className="w-full"
-          >
-            Play solo
-          </Button>
+          {meta.hasSolo && (
+            <Button
+              onClick={solo}
+              variant="outline"
+              disabled={offline || busy}
+              className="w-full"
+            >
+              {game === 'tictactoe' ? 'Play the computer' : 'Play solo'}
+            </Button>
+          )}
 
           <div className="flex items-center gap-2">
             <Input
@@ -248,12 +264,14 @@ export function RoomPanel({ userId }: { userId: string }) {
               options={CONFIG_LIMITS.secondsPerRound}
               onChange={(secondsPerRound) => updateConfig({ secondsPerRound })}
             />
-            <Setting
-              label="Guesses"
-              value={room.config.maxGuesses}
-              options={CONFIG_LIMITS.maxGuesses}
-              onChange={(maxGuesses) => updateConfig({ maxGuesses })}
-            />
+            {room.config.game === 'wordbattle' && (
+              <Setting
+                label="Guesses"
+                value={room.config.maxGuesses}
+                options={CONFIG_LIMITS.maxGuesses}
+                onChange={(maxGuesses) => updateConfig({ maxGuesses })}
+              />
+            )}
             <Setting
               label="Visibility"
               value={room.config.visibility === 'open' ? 1 : 0}
@@ -261,12 +279,14 @@ export function RoomPanel({ userId }: { userId: string }) {
               labels={{ 0: 'private', 1: 'public' }}
               onChange={(value) => updateConfig({ visibility: value === 1 ? 'open' : 'private' })}
             />
-            <Setting
-              label="Players"
-              value={room.config.maxPlayers}
-              options={CONFIG_LIMITS.maxPlayers}
-              onChange={(maxPlayers) => updateConfig({ maxPlayers })}
-            />
+            {room.config.game === 'wordbattle' && (
+              <Setting
+                label="Players"
+                value={room.config.maxPlayers}
+                options={CONFIG_LIMITS.maxPlayers}
+                onChange={(maxPlayers) => updateConfig({ maxPlayers })}
+              />
+            )}
           </div>
         )}
 

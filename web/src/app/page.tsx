@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { FriendList } from '@/components/friend-list';
 import { MobileNav } from '@/components/mobile-nav';
+import { GAME_LIST } from '@/components/games/registry';
 import { WordReview } from '@/components/word-review';
 
 export default async function Home() {
@@ -51,17 +52,31 @@ export default async function Home() {
           </p>
         )}
 
-        <Card className="mt-6 max-w-md">
-          <CardContent className="flex items-center justify-between gap-4 p-6">
-            <div>
-              <p className="font-semibold tracking-tight">WordBattle</p>
-              <p className="text-sm text-muted-foreground">Guess the word before they do.</p>
-            </div>
-            <Button asChild>
-              <Link href="/play">Play</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {GAME_LIST.map((game) => {
+            const Icon = game.icon;
+
+            return (
+              <Link key={game.id} href={`/play/${game.id}`} className="group">
+                <Card className="relative h-full overflow-hidden transition-transform group-hover:-translate-y-0.5">
+                  <div
+                    className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${game.accent}`}
+                  />
+                  <CardContent className="relative flex h-full flex-col gap-3 p-6">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-card ring-1 ring-border">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="font-semibold tracking-tight">{game.name}</p>
+                      <p className="text-sm text-muted-foreground">{game.tagline}</p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{game.description}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
 
         <div className="mt-6 max-w-md">
           <Card>

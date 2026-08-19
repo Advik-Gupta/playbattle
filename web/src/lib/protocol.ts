@@ -6,7 +6,17 @@ export const WORD_LENGTH = 5;
 
 export type GameMode = 'race' | 'solo';
 
+export type GameId = 'wordbattle' | 'tictactoe';
+
+export const GAMES: { id: GameId; name: string; tagline: string }[] = [
+  { id: 'wordbattle', name: 'WordBattle', tagline: 'Guess the word before they do' },
+  { id: 'tictactoe', name: 'Tic Tac Toe', tagline: 'Three in a row, best of three' },
+];
+
+export const CPU_ID = 'cpu';
+
 export interface RoomConfig {
+  game: GameId;
   mode: GameMode;
   rounds: number;
   secondsPerRound: number;
@@ -16,6 +26,7 @@ export interface RoomConfig {
 }
 
 export const DEFAULT_CONFIG: RoomConfig = {
+  game: 'wordbattle',
   mode: 'race',
   rounds: 3,
   secondsPerRound: 120,
@@ -32,12 +43,29 @@ export const CONFIG_LIMITS = {
 } as const;
 
 export const SOLO_CONFIG: RoomConfig = {
+  game: 'wordbattle',
   mode: 'solo',
   rounds: 1,
   secondsPerRound: 0,
   maxGuesses: 6,
   maxPlayers: 1,
   visibility: 'private',
+};
+
+export const TICTACTOE_CONFIG: RoomConfig = {
+  game: 'tictactoe',
+  mode: 'race',
+  rounds: 3,
+  secondsPerRound: 60,
+  maxGuesses: 0,
+  maxPlayers: 2,
+  visibility: 'private',
+};
+
+export const TICTACTOE_SOLO_CONFIG: RoomConfig = {
+  ...TICTACTOE_CONFIG,
+  mode: 'solo',
+  maxPlayers: 1,
 };
 
 export const MAX_HINTS = 2;
@@ -92,7 +120,17 @@ export interface RoundSummary {
   round: number;
   answer: string;
   winnerId: string | null;
+  draw: boolean;
   boards: RevealedBoard[];
+  ttt?: { board: (string | null)[]; line: number[] | null };
+}
+
+export interface TicTacToeState {
+  board: (string | null)[];
+  marks: Record<string, 'X' | 'O'>;
+  turnId: string | null;
+  winningLine: number[] | null;
+  lastMove: number | null;
 }
 
 export interface RoomState {
@@ -107,7 +145,9 @@ export interface RoomState {
   history: RoundSummary[];
   answer: string | null;
   matchWinnerId: string | null;
+  matchDraw: boolean;
   votekicks: VoteKick[];
+  ttt: TicTacToeState | null;
 }
 
 export interface VoteKick {
@@ -120,6 +160,7 @@ export interface VoteKick {
 
 export interface OpenRoom {
   code: string;
+  game: GameId;
   hostName: string;
   players: number;
   maxPlayers: number;
@@ -152,6 +193,7 @@ export interface GameInvite {
   fromName: string;
   code: string;
   mode: GameMode;
+  game: GameId;
 }
 
 export const CHAT_LIMIT = 200;
@@ -167,11 +209,15 @@ export interface ClientToServerEvents {
   'presence:ping': (ack: (res: Ack<null>) => void) => void;
   'invite:send': (toUserId: string, ack: (res: Ack<null>) => void) => void;
   'chat:send': (text: string, ack: (res: Ack<null>) => void) => void;
-  'room:quickmatch': (ack: (res: Ack<{ code: string; waiting: boolean }>) => void) => void;
+  'room:quickmatch': (
+    game: GameId,
+    ack: (res: Ack<{ code: string; waiting: boolean }>) => void,
+  ) => void;
   'room:cancelQuickmatch': (ack: (res: Ack<null>) => void) => void;
   'room:votekick': (targetId: string, ack: (res: Ack<null>) => void) => void;
   'room:remove': (targetId: string, ack: (res: Ack<null>) => void) => void;
   'game:skip': (ack: (res: Ack<null>) => void) => void;
+  'game:move': (index: number, ack: (res: Ack<null>) => void) => void;
   'room:join': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
   'room:leave': (ack: (res: Ack<null>) => void) => void;
   'room:ready': (ready: boolean, ack: (res: Ack<null>) => void) => void;

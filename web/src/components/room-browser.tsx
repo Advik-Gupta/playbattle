@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { OpenRoom } from '@/lib/protocol';
 import { useSocket } from '@/lib/socket';
+import { gameMeta } from '@/components/games/registry';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -91,7 +92,7 @@ export function RoomBrowser() {
             <div>
               <p className="font-mono text-sm font-semibold tracking-[0.2em]">{room.code}</p>
               <p className="text-xs text-muted-foreground">
-                {room.hostName} · {room.rounds} rounds ·{' '}
+                {gameMeta(room.game).name} · {room.hostName} · {room.rounds} rounds ·{' '}
                 {room.secondsPerRound > 0 ? `${room.secondsPerRound}s` : 'untimed'}
               </p>
             </div>

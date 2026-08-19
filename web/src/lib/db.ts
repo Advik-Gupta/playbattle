@@ -67,6 +67,7 @@ export interface Profile {
   displayName: string;
   stats: Stats;
   solo: SoloStats;
+  games?: Record<GameKey, GameTally>;
   banned?: boolean;
   createdAt?: Date;
 }
@@ -75,6 +76,8 @@ export interface MatchRound {
   round: number;
   answer: string;
   winnerId: string | null;
+  draw?: boolean;
+  ttt?: { board: (string | null)[]; line: number[] | null } | null;
   boards: {
     playerId: string;
     words: string[];
@@ -84,10 +87,18 @@ export interface MatchRound {
   }[];
 }
 
+export type GameKey = 'wordbattle' | 'tictactoe';
+
+export interface GameTally {
+  played: number;
+  won: number;
+}
+
 export interface MatchRecord {
   matchId: string;
   code: string;
   mode: 'race' | 'solo';
+  game: GameKey;
   players: { userId: string; name: string; score: number }[];
   winnerId: string | null;
   rounds: MatchRound[];
@@ -112,6 +123,10 @@ const userSchema = new Schema(
       points: { type: Number, default: 0 },
     },
     banned: { type: Boolean, default: false },
+    games: {
+      wordbattle: { played: { type: Number, default: 0 }, won: { type: Number, default: 0 } },
+      tictactoe: { played: { type: Number, default: 0 }, won: { type: Number, default: 0 } },
+    },
     solo: {
       played: { type: Number, default: 0 },
       solves: { type: Number, default: 0 },
@@ -129,6 +144,7 @@ const matchSchema = new Schema(
     matchId: { type: String, required: true, unique: true, index: true },
     code: { type: String, default: '' },
     mode: { type: String, default: 'race', index: true },
+    game: { type: String, default: 'wordbattle', index: true },
     players: [
       {
         _id: false,
@@ -224,6 +240,7 @@ export interface MatchInput {
   matchId: string;
   code: string;
   mode: 'race' | 'solo';
+  game: GameKey;
   players: { userId: string; name: string; score: number }[];
   winnerId: string | null;
   rounds: MatchRound[];
@@ -282,6 +299,8 @@ export async function recordMatch(input: MatchInput): Promise<boolean> {
       { userId: player.userId },
       {
         $inc: {
+          [`games.${input.game ?? 'wordbattle'}.played`]: 1,
+          [`games.${input.game ?? 'wordbattle'}.won`]: won ? 1 : 0,
           'stats.played': 1,
           'stats.won': won ? 1 : 0,
           'stats.rounds': rounds.length,
