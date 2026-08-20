@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { databaseReady, friendList, getProfile, hasDatabase } from '@/lib/db';
 import { setWordStatus, vocabCounts, wordToReview } from '@/lib/vocab';
+import { acknowledgeNotices, myNotices } from '@/lib/db';
 import { SiteHeader } from '@/components/site-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,6 +11,7 @@ import { FriendList } from '@/components/friend-list';
 import { MobileNav } from '@/components/mobile-nav';
 import { GAME_LIST } from '@/components/games/registry';
 import { WordReview } from '@/components/word-review';
+import { NoticeDialog } from '@/components/notice-dialog';
 
 export default async function Home() {
   const session = await auth();
@@ -20,12 +22,22 @@ export default async function Home() {
   if (online && !profile?.displayName) redirect('/onboarding');
 
   const userId = session.user.id;
-  const [friends, words, review] = online
-    ? await Promise.all([friendList(userId), vocabCounts(userId), wordToReview(userId)])
-    : [[], { total: 0, learning: 0, known: 0 }, null];
+  const [friends, words, review, notices] = online
+    ? await Promise.all([
+        friendList(userId),
+        vocabCounts(userId),
+        wordToReview(userId),
+        myNotices(userId),
+      ])
+    : [[], { total: 0, learning: 0, known: 0 }, null, []];
 
   async function noop() {
     'use server';
+  }
+
+  async function acknowledge() {
+    'use server';
+    await acknowledgeNotices(userId);
   }
 
   async function markKnown(formData: FormData) {
@@ -38,6 +50,15 @@ export default async function Home() {
   return (
     <div className="min-h-dvh pb-20 sm:pb-0">
       <SiteHeader />
+      <NoticeDialog
+        notices={notices.map((notice) => ({
+          _id: String(notice._id),
+          kind: notice.kind,
+          reason: notice.reason,
+          until: notice.until,
+        }))}
+        acknowledgeAction={acknowledge}
+      />
       <WordReview word={review} markKnown={markKnown} />
 
       <main className="container py-10">

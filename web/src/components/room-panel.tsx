@@ -23,6 +23,7 @@ export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
+  const [knocking, setKnocking] = useState('');
 
   const offline = status !== 'online' || !socket;
 
@@ -72,8 +73,14 @@ export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
     setError('');
     socket.emit('room:join', value, (res) => {
       setBusy(false);
-      if (!res.ok) setError(res.error);
-      else setCode('');
+
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+
+      setCode('');
+      setKnocking(res.data.pending ? value : '');
     });
   }
 
@@ -154,6 +161,12 @@ export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
               Join
             </Button>
           </div>
+
+          {knocking && (
+            <p className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">
+              Knocked on {knocking}. Waiting for the host to let you in.
+            </p>
+          )}
 
           {offline && (
             <p className="text-sm text-muted-foreground">
@@ -253,6 +266,58 @@ export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
             ),
           )}
         </div>
+
+        {isHost && room.joinRequests.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Asking to join
+            </p>
+
+            {room.joinRequests.map((request) => (
+              <div
+                key={request.userId}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Avatar id={request.avatar} name={request.name} size={26} />
+                  {request.name}
+                </span>
+
+                <span className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      socket?.emit(
+                        'room:respondJoin',
+                        { userId: request.userId, accept: true },
+                        (res) => {
+                          if (!res.ok) setError(res.error);
+                        },
+                      )
+                    }
+                  >
+                    Let in
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      socket?.emit(
+                        'room:respondJoin',
+                        { userId: request.userId, accept: false },
+                        (res) => {
+                          if (!res.ok) setError(res.error);
+                        },
+                      )
+                    }
+                  >
+                    No
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {isHost && (
           <div className="grid gap-3 sm:grid-cols-5">

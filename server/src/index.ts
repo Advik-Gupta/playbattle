@@ -14,7 +14,8 @@ import type {
 } from './protocol.js';
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
-import { bannedCount, isBanned, refreshBans } from './bans.js';
+import { bannedCount, isBanned, pendingWarning, refreshBans, clearWarning } from './bans.js';
+import { bucketCount, httpLimiter, sweepBuckets, take } from './limits.js';
 import {
   addMessage,
   allowed,
@@ -50,6 +51,8 @@ import {
   joinQueue,
   joinRoom,
   leaveQueue,
+  allowJoin,
+  dropJoinRequest,
   leaveRoom,
   makeMove,
   markDisconnected,
@@ -57,6 +60,7 @@ import {
   reapAbsent,
   removePlayer,
   resign,
+  respondToJoin,
   openRooms,
   playerSockets,
   rematch,
@@ -83,6 +87,8 @@ const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .map((o) => o.trim())
   .filter(Boolean);
 
+const browseLimit = httpLimiter(30, 1);
+
 const app = express();
 app.use(cors({ origin: origins, credentials: true }));
 app.use(express.json());
@@ -94,10 +100,16 @@ app.get('/health', (_req, res) => {
     rooms: roomCount(),
     queue: queueSize(),
     banned: bannedCount(),
+    buckets: bucketCount(),
   });
 });
 
-app.get('/rooms', (_req, res) => {
+app.get('/rooms', (req, res) => {
+  if (!browseLimit(req.ip ?? 'unknown')) {
+    res.status(429).json({ error: 'slow down' });
+    return;
+  }
+
   res.json({ rooms: openRooms() });
 });
 
@@ -173,7 +185,11 @@ io.use(async (socket, next) => {
   if (!profile) return next(new Error('missing profile'));
 
   await refreshBans();
-  if (isBanned(profile.id)) return next(new Error('you are banned'));
+
+  const ban = isBanned(profile.id);
+  if (ban) {
+    return next(new Error(ban.reason ? `banned: ${ban.reason}` : 'you are banned'));
+  }
 
   socket.data.profile = profile;
   socket.data.roomCode = null;
@@ -260,6 +276,19 @@ io.on('connection', (socket) => {
   presenceConnected(profile.id, socket.id);
   announcePresence(profile.id);
 
+  const warning = pendingWarning(profile.id);
+  if (warning) {
+    socket.emit('sanction:notice', warning);
+    clearWarning(profile.id);
+  }
+
+  const guard = (action: string, ack: (res: { ok: false; error: string }) => void) => {
+    if (take(profile.id, action)) return true;
+
+    ack({ ok: false, error: 'you are doing that too fast' });
+    return false;
+  };
+
   const enterRoom = (code: string) => {
     socket.join(code);
     socket.data.roomCode = code;
@@ -292,6 +321,8 @@ io.on('connection', (socket) => {
   };
 
   socket.on('room:create', (config, ack) => {
+    if (!guard('room:create', ack)) return;
+
     exitCurrent();
     const room = createRoom(profile, socket.id, config ?? {});
     enterRoom(room.code);
@@ -300,6 +331,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:solo', (config, ack) => {
+    if (!guard('room:solo', ack)) return;
+
     exitCurrent();
     const room = createSolo(profile, socket.id, config ?? {});
     enterRoom(room.code);
@@ -310,6 +343,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('game:hint', (ack) => {
+    if (!guard('game:hint', ack)) return;
+
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
 
@@ -321,8 +356,29 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:join', (code, ack) => {
-    const result = joinRoom(String(code ?? '').trim(), profile, socket.id);
-    if (!result.ok) return ack({ ok: false, error: result.error });
+    if (!guard('room:join', ack)) return;
+
+    const wanted = String(code ?? '').trim().toUpperCase();
+    const result = joinRoom(wanted, profile, socket.id);
+
+    if (!result.ok) {
+      if (result.pending) {
+        const room = getRoom(wanted);
+        const request = room?.joinRequests.find((entry) => entry.userId === profile.id);
+
+        if (room && request) {
+          for (const socketId of socketsFor(room.hostId)) {
+            io.to(socketId).emit('room:joinRequest', request);
+          }
+
+          push(room);
+        }
+
+        return ack({ ok: true, data: { code: wanted, pending: true } });
+      }
+
+      return ack({ ok: false, error: result.error });
+    }
 
     if (socket.data.roomCode && socket.data.roomCode !== result.room.code) exitCurrent();
 
@@ -347,6 +403,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('game:guess', (word, ack) => {
+    if (!guard('game:guess', ack)) return;
+
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
 
@@ -409,6 +467,8 @@ io.on('connection', (socket) => {
   };
 
   socket.on('room:votekick', (targetId, ack) => {
+    if (!guard('room:votekick', ack)) return;
+
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
 
@@ -433,6 +493,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('game:move', (index, ack) => {
+    if (!guard('game:move', ack)) return;
+
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
 
@@ -464,6 +526,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:quickmatch', (game, ack) => {
+    if (!guard('room:quickmatch', ack)) return;
+
     exitCurrent();
 
     const wanted = game === 'tictactoe' ? 'tictactoe' : 'wordbattle';
@@ -493,6 +557,27 @@ io.on('connection', (socket) => {
     ack({ ok: true, data: null });
   });
 
+  socket.on('room:respondJoin', (payload, ack) => {
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = respondToJoin(
+      code,
+      profile.id,
+      String(payload?.userId ?? ''),
+      Boolean(payload?.accept),
+    );
+
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    for (const socketId of socketsFor(result.request.userId)) {
+      io.to(socketId).emit('room:joinResponse', { code, accepted: result.accepted });
+    }
+
+    push(result.room);
+    ack({ ok: true, data: null });
+  });
+
   socket.on('presence:watch', (userIds, ack) => {
     const list = Array.isArray(userIds) ? userIds.filter((id) => typeof id === 'string') : [];
     ack({ ok: true, data: watch(profile.id, list) });
@@ -504,6 +589,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('invite:send', (toUserId, ack) => {
+    if (!guard('invite:send', ack)) return;
+
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'you are not in a room' });
 
@@ -516,6 +603,8 @@ io.on('connection', (socket) => {
 
     const targets = socketsFor(String(toUserId ?? ''));
     if (targets.length === 0) return ack({ ok: false, error: 'they are offline' });
+
+    allowJoin(room.code, String(toUserId ?? ''));
 
     for (const socketId of targets) {
       io.to(socketId).emit('invite:received', {
@@ -563,6 +652,9 @@ io.on('connection', (socket) => {
 
     presenceDisconnected(profile.id, socket.id);
     leaveQueue(profile.id);
+
+    const pendingIn = socket.data.roomCode;
+    if (pendingIn) dropJoinRequest(pendingIn, profile.id);
     unwatch(profile.id);
     announcePresence(profile.id);
 
@@ -605,6 +697,7 @@ setInterval(() => {
   void refreshBans(true);
   sweepChatRates();
   sweepPresence();
+  sweepBuckets();
 }, 60_000);
 
 server.listen(port, () => {

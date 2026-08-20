@@ -4,6 +4,7 @@ const LINKS = [
   { href: '/admin', label: 'Overview' },
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/matches', label: 'Matches' },
+  { href: '/admin/sanctions', label: 'Sanctions' },
   { href: '/admin/announce', label: 'Announce' },
 ];
 

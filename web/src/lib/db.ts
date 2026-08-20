@@ -28,6 +28,20 @@ export const EMPTY_STATS: Stats = {
   points: 0,
 };
 
+export type SanctionKind = 'warn' | 'ban';
+
+export interface SanctionRecord {
+  _id?: unknown;
+  userId: string;
+  kind: SanctionKind;
+  reason: string;
+  actor: string;
+  until: string | null;
+  acknowledged: boolean;
+  liftedAt: string | null;
+  createdAt?: string;
+}
+
 export interface FriendLink {
   fromId: string;
   toId: string;
@@ -183,6 +197,23 @@ friendSchema.index({ fromId: 1, toId: 1 }, { unique: true });
 const FriendModel: Model<FriendLink> =
   (mongoose.models.Friend as Model<FriendLink> | undefined) ??
   (mongoose.model('Friend', friendSchema) as unknown as Model<FriendLink>);
+
+const sanctionSchema = new Schema(
+  {
+    userId: { type: String, required: true, index: true },
+    kind: { type: String, required: true },
+    reason: { type: String, default: '' },
+    actor: { type: String, default: 'admin' },
+    until: { type: Date, default: null },
+    acknowledged: { type: Boolean, default: false },
+    liftedAt: { type: Date, default: null },
+  },
+  { collection: 'sanctions', timestamps: true },
+);
+
+const SanctionModel: Model<SanctionRecord> =
+  (mongoose.models.Sanction as Model<SanctionRecord> | undefined) ??
+  (mongoose.model('Sanction', sanctionSchema) as unknown as Model<SanctionRecord>);
 
 const MatchModel: Model<MatchRecord> =
   (mongoose.models.Match as Model<MatchRecord> | undefined) ??
@@ -769,4 +800,134 @@ export async function gameLeaderboard(game: GameKey, limit = 20) {
       won: tally.won,
     };
   });
+}
+
+export const BAN_DURATIONS = [
+  { label: '1 hour', hours: 1 },
+  { label: '1 day', hours: 24 },
+  { label: '1 week', hours: 168 },
+  { label: 'forever', hours: 0 },
+];
+
+export async function issueSanction(input: {
+  userId: string;
+  kind: SanctionKind;
+  reason: string;
+  hours: number;
+  actor: string;
+}) {
+  if (!(await connect())) return false;
+
+  const until =
+    input.kind === 'ban' && input.hours > 0
+      ? new Date(Date.now() + input.hours * 3_600_000).toISOString()
+      : null;
+
+  await SanctionModel.create({
+    userId: input.userId,
+    kind: input.kind,
+    reason: input.reason.slice(0, 200),
+    actor: input.actor,
+    until,
+    acknowledged: false,
+    liftedAt: null,
+  });
+
+  if (input.kind === 'ban') await UserModel.updateOne({ userId: input.userId }, { $set: { banned: true } }).exec();
+
+  return true;
+}
+
+export async function liftSanction(id: string) {
+  if (!(await connect())) return false;
+
+  const sanction = await SanctionModel.findById(id).lean<SanctionRecord>().exec();
+  if (!sanction) return false;
+
+  await SanctionModel.updateOne({ _id: id }, { $set: { liftedAt: new Date().toISOString() } }).exec();
+
+  if (sanction.kind === 'ban') {
+    const others = await SanctionModel.countDocuments({
+      userId: sanction.userId,
+      kind: 'ban',
+      liftedAt: null,
+      _id: { $ne: id },
+    }).exec();
+
+    if (others === 0) {
+      await UserModel.updateOne({ userId: sanction.userId }, { $set: { banned: false } }).exec();
+    }
+  }
+
+  return true;
+}
+
+function untilMs(value: SanctionRecord['until']) {
+  return value ? new Date(value).getTime() : null;
+}
+
+export function sanctionIsLive(sanction: SanctionRecord) {
+  if (sanction.liftedAt) return false;
+
+  const expires = untilMs(sanction.until);
+  return expires === null || expires > Date.now();
+}
+
+export async function activeSanctions() {
+  if (!(await connect())) return { bans: [], warnings: [] };
+
+  const docs = await SanctionModel.find({ liftedAt: null }).lean<SanctionRecord[]>().exec();
+
+  const bans = docs
+    .filter((doc) => doc.kind === 'ban' && sanctionIsLive(doc))
+    .map((doc) => ({
+      userId: doc.userId,
+      reason: doc.reason,
+      until: untilMs(doc.until),
+    }));
+
+  const warnings = docs
+    .filter((doc) => doc.kind === 'warn' && !doc.acknowledged)
+    .map((doc) => ({ userId: doc.userId, reason: doc.reason }));
+
+  return { bans, warnings };
+}
+
+export async function sanctionPage(page: number, size = 20) {
+  if (!(await connect())) return { sanctions: [] as SanctionRecord[], total: 0, page: 1 };
+
+  const total = await SanctionModel.countDocuments({}).exec();
+  const safe = clampPage(page, total, size);
+
+  const docs = await SanctionModel.find({})
+    .sort({ createdAt: -1 })
+    .skip((safe - 1) * size)
+    .limit(size)
+    .lean<SanctionRecord[]>()
+    .exec();
+
+  return {
+    sanctions: docs.map((doc) => ({ ...plain(doc), _id: String(doc._id) })),
+    total,
+    page: safe,
+  };
+}
+
+export async function myNotices(userId: string) {
+  if (!(await connect())) return [];
+
+  const docs = await SanctionModel.find({ userId, acknowledged: false, liftedAt: null })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .lean<SanctionRecord[]>()
+    .exec();
+
+  return docs.map((doc) => ({ ...plain(doc), _id: String(doc._id) }));
+}
+
+export async function acknowledgeNotices(userId: string) {
+  if (!(await connect())) return false;
+
+  await SanctionModel.updateMany({ userId, acknowledged: false }, { $set: { acknowledged: true } }).exec();
+  return true;
 }

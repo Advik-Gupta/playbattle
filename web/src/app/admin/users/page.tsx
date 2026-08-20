@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { adminUserPage, setBanned } from '@/lib/db';
@@ -88,6 +89,10 @@ export default async function AdminUsers({
                   </span>
                   <span>{user.soloPlayed} solo</span>
                   <span className="tabular-nums">{user.points} pts</span>
+
+                  <Button asChild size="sm" variant="ghost">
+                    <Link href={`/admin/sanctions?user=${user.userId}`}>Sanction</Link>
+                  </Button>
 
                   <form action={toggleBan}>
                     <input type="hidden" name="userId" value={user.userId} />

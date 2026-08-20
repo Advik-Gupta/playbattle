@@ -19,6 +19,7 @@ import {
   type RoomPhase,
   type RoomState,
   type GameId,
+  type JoinRequest,
   type OpenRoom,
   type RoundSummary,
   type TicTacToeState,
@@ -67,9 +68,13 @@ export interface Room {
   matchId: string;
   votekicks: VoteKick[];
   banned: Set<string>;
+  joinRequests: JoinRequest[];
+  invited: Set<string>;
 }
 
-export type RoomResult = { ok: true; room: Room } | { ok: false; error: string };
+export type RoomResult =
+  | { ok: true; room: Room }
+  | { ok: false; error: string; pending?: boolean };
 
 const rooms = new Map<string, Room>();
 
@@ -176,6 +181,8 @@ export function createRoom(profile: PlayerProfile, socketId: string, config: Par
     matchId: randomUUID(),
     votekicks: [],
     banned: new Set<string>(),
+    joinRequests: [],
+    invited: new Set<string>(),
   };
 
   room.players.set(profile.id, blankPlayer(profile, socketId));
@@ -206,6 +213,21 @@ export function joinRoom(
 
   const seats = Math.min(room.config.maxPlayers, MAX_ROOM_PLAYERS);
   if (room.players.size >= seats) return { ok: false, error: 'room is full' };
+
+  if (room.config.visibility === 'private' && !room.invited.has(profile.id)) {
+    const already = room.joinRequests.find((entry) => entry.userId === profile.id);
+
+    if (!already) {
+      room.joinRequests.push({
+        userId: profile.id,
+        name: profile.name,
+        avatar: profile.avatar,
+        requestedAt: Date.now(),
+      });
+    }
+
+    return { ok: false, error: 'waiting for the host', pending: true } as const;
+  }
 
   room.players.set(profile.id, blankPlayer(profile, socketId));
   room.emptySince = null;
@@ -342,6 +364,7 @@ export function serialize(room: Room, viewerId: string): RoomState {
     matchWinnerId: room.matchWinnerId,
     matchDraw: room.matchDraw,
     votekicks: room.votekicks,
+    joinRequests: room.hostId === viewerId ? room.joinRequests : [],
     ttt: room.ttt,
   };
 }
@@ -722,4 +745,34 @@ export function queueSize() {
   let total = 0;
   for (const queue of queues.values()) total += queue.length;
   return total;
+}
+
+export function allowJoin(code: string, userId: string) {
+  const room = getRoom(code);
+  if (!room) return false;
+
+  room.invited.add(userId);
+  room.banned.delete(userId);
+  return true;
+}
+
+export function respondToJoin(code: string, hostId: string, userId: string, accept: boolean) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.hostId !== hostId) return { ok: false, error: 'only the host decides' } as const;
+
+  const request = room.joinRequests.find((entry) => entry.userId === userId);
+  if (!request) return { ok: false, error: 'no request from them' } as const;
+
+  room.joinRequests = room.joinRequests.filter((entry) => entry.userId !== userId);
+  if (accept) room.invited.add(userId);
+
+  return { ok: true, room, request, accepted: accept } as const;
+}
+
+export function dropJoinRequest(code: string, userId: string) {
+  const room = getRoom(code);
+  if (!room) return;
+
+  room.joinRequests = room.joinRequests.filter((entry) => entry.userId !== userId);
 }

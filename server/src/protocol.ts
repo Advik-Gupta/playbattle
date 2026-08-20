@@ -165,7 +165,21 @@ export interface RoomState {
   matchWinnerId: string | null;
   matchDraw: boolean;
   votekicks: VoteKick[];
+  joinRequests: JoinRequest[];
   ttt: TicTacToeState | null;
+}
+
+export interface JoinRequest {
+  userId: string;
+  name: string;
+  avatar: string;
+  requestedAt: number;
+}
+
+export interface Sanction {
+  kind: 'warn' | 'ban';
+  reason: string;
+  until: number | null;
 }
 
 export interface VoteKick {
@@ -238,7 +252,14 @@ export interface ClientToServerEvents {
   'room:remove': (targetId: string, ack: (res: Ack<null>) => void) => void;
   'game:skip': (ack: (res: Ack<null>) => void) => void;
   'game:move': (index: number, ack: (res: Ack<null>) => void) => void;
-  'room:join': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
+  'room:join': (
+    code: string,
+    ack: (res: Ack<{ code: string; pending?: boolean }>) => void,
+  ) => void;
+  'room:respondJoin': (
+    payload: { userId: string; accept: boolean },
+    ack: (res: Ack<null>) => void,
+  ) => void;
   'room:leave': (ack: (res: Ack<null>) => void) => void;
   'room:ready': (ready: boolean, ack: (res: Ack<null>) => void) => void;
   'room:config': (config: Partial<RoomConfig>, ack: (res: Ack<null>) => void) => void;
@@ -260,6 +281,9 @@ export interface ServerToClientEvents {
   'session:replaced': () => void;
   'room:removed': (reason: string) => void;
   'queue:matched': (code: string) => void;
+  'room:joinRequest': (request: JoinRequest) => void;
+  'room:joinResponse': (payload: { code: string; accepted: boolean }) => void;
+  'sanction:notice': (sanction: Sanction) => void;
   toast: (payload: { kind: 'info' | 'error' | 'success'; message: string }) => void;
 }
 

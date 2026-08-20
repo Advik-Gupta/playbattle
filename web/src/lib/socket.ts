@@ -70,6 +70,34 @@ export const useSocket = create<SocketStore>((set, get) => ({
       }));
     });
 
+    socket.on('room:joinResponse', ({ accepted }) => {
+      toastId += 1;
+      set((state) => ({
+        toasts: [
+          ...state.toasts,
+          {
+            id: toastId,
+            kind: accepted ? 'success' : 'error',
+            message: accepted ? 'the host let you in' : 'the host said no',
+          },
+        ],
+      }));
+    });
+
+    socket.on('sanction:notice', (sanction) => {
+      toastId += 1;
+      set((state) => ({
+        toasts: [
+          ...state.toasts,
+          {
+            id: toastId,
+            kind: 'error',
+            message: sanction.reason ? `warning: ${sanction.reason}` : 'you have a warning',
+          },
+        ],
+      }));
+    });
+
     socket.on('queue:matched', () => {
       toastId += 1;
       set((state) => ({
