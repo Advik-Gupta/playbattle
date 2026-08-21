@@ -1,0 +1,24 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY server/package.json server/package.json
+COPY web/package.json web/package.json
+RUN npm ci
+
+COPY web web
+ARG NEXT_PUBLIC_GAME_SERVER_URL=http://localhost:4000
+ENV NEXT_PUBLIC_GAME_SERVER_URL=$NEXT_PUBLIC_GAME_SERVER_URL
+RUN npm run build --workspace web
+
+FROM node:20-alpine AS run
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=build /app/web/.next/standalone ./
+COPY --from=build /app/web/.next/static web/.next/static
+COPY --from=build /app/web/public web/public
+
+EXPOSE 3000
+USER node
+CMD ["node", "web/server.js"]

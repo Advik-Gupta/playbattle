@@ -14,6 +14,7 @@ import type {
 } from './protocol.js';
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
+import { checkEnv } from './env.js';
 import { bannedCount, isBanned, pendingWarning, refreshBans, clearWarning } from './bans.js';
 import { bucketCount, httpLimiter, sweepBuckets, take } from './limits.js';
 import {
@@ -84,6 +85,8 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env') });
 
+checkEnv();
+
 const port = Number(process.env.GAME_SERVER_PORT ?? 4000);
 const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .split(',')
@@ -98,6 +101,17 @@ const proxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
 if (proxyHops > 0) app.set('trust proxy', proxyHops);
 app.use(cors({ origin: origins, credentials: true }));
 app.use(express.json());
+
+let shuttingDown = false;
+
+app.get('/ready', (_req, res) => {
+  if (shuttingDown) {
+    res.status(503).json({ ready: false });
+    return;
+  }
+
+  res.json({ ready: true });
+});
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -776,6 +790,33 @@ setInterval(() => {
   sweepBuckets();
 }, 60_000);
 
-server.listen(port, () => {
+const httpServer = server.listen(port, () => {
   console.log(`server on http://localhost:${port}`);
 });
+
+function shutdown(signal: string) {
+  if (shuttingDown) return;
+
+  shuttingDown = true;
+  console.log(`${signal} received, shutting down`);
+
+  io.emit('toast', { kind: 'info', message: 'server is restarting, hang tight' });
+  io.emit('room:closed', 'the server is restarting');
+
+  const timer = setTimeout(() => {
+    console.warn('forcing exit');
+    process.exit(1);
+  }, 8000);
+
+  timer.unref();
+
+  io.close(() => {
+    httpServer.close(() => {
+      console.log('closed cleanly');
+      process.exit(0);
+    });
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

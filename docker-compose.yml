@@ -1,0 +1,57 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      GAME_SERVER_PORT: 4000
+      WEB_APP_URL: http://web:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_GAME_SERVER_URL: ${NEXT_PUBLIC_GAME_SERVER_URL:-http://localhost:4000}
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/playbattle}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_GAME_SERVER_URL: ${NEXT_PUBLIC_GAME_SERVER_URL:-http://localhost:4000}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      ADMIN_CODE: ${ADMIN_CODE}
+    ports:
+      - "3000:3000"
+
+volumes:
+  mongo-data:

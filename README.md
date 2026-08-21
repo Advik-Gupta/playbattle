@@ -47,6 +47,27 @@ you need a mongodb connection string and google oauth credentials in `.env`. wit
 | `INTERNAL_API_SECRET` | shared secret between the two processes |
 | `ADMIN_CODE` | code for the admin panel |
 
+## deploying
+
+there are two processes: the next app and the socket server. both have a dockerfile, and there is a compose file that also brings up mongo.
+
+```
+cp .env.example .env
+docker compose up --build
+```
+
+set `NEXT_PUBLIC_GAME_SERVER_URL` to the public url of the socket server before building the web image, since it gets baked into the client bundle. behind a reverse proxy set `TRUST_PROXY_HOPS=1` so rate limits key on real client ips.
+
+the socket server exposes `/health` for metrics and `/ready` for readiness checks. it drains on SIGTERM: connected players get told the server is restarting before sockets close.
+
+running without docker:
+
+```
+npm run build
+npm run start         # next app on :3000
+npm run start:server  # socket server on :4000
+```
+
 ## layout
 
 ```
