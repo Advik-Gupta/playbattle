@@ -43,6 +43,7 @@ you need a mongodb connection string and google oauth credentials in `.env`. wit
 | `NEXT_PUBLIC_GAME_SERVER_URL` | where the browser reaches the socket server |
 | `WEB_APP_URL` | where the game server reaches the web app |
 | `CORS_ORIGINS` | comma separated origins allowed to connect |
+| `TRUST_PROXY_HOPS` | set to 1 behind a reverse proxy so rate limits see real client ips |
 | `INTERNAL_API_SECRET` | shared secret between the two processes |
 | `ADMIN_CODE` | code for the admin panel |
 

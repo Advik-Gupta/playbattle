@@ -91,6 +91,9 @@ const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
 const browseLimit = httpLimiter(30, 1);
 
 const app = express();
+
+const proxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+if (proxyHops > 0) app.set('trust proxy', proxyHops);
 app.use(cors({ origin: origins, credentials: true }));
 app.use(express.json());
 

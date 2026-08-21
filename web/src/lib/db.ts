@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import mongoose, { Schema, type Model } from 'mongoose';
 
 const uri = process.env.MONGODB_URI?.trim();
@@ -236,16 +237,15 @@ export async function connect(): Promise<boolean> {
   }
 }
 
-export async function databaseReady() {
-  return connect();
-}
+export const databaseReady = cache(async () => connect());
 
 function plain<T>(doc: T): T {
   return JSON.parse(JSON.stringify(doc)) as T;
 }
 
-export async function getProfile(userId: string): Promise<Profile | null> {
+export const getProfile = cache(async (userId: string): Promise<Profile | null> => {
   if (!(await connect())) return null;
+
   const doc = await UserModel.findOne({ userId }).lean<Profile>().exec();
   if (!doc) return null;
 
@@ -253,7 +253,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
   profile.stats = { ...EMPTY_STATS, ...(profile.stats ?? {}) };
   profile.solo = { ...EMPTY_SOLO, ...(profile.solo ?? {}) };
   return profile;
-}
+});
 
 export async function saveProfile(
   userId: string,
@@ -545,18 +545,49 @@ export async function sentRequestIds(userId: string): Promise<string[]> {
   return links.map((link) => link.toId);
 }
 
+export interface DayPoint {
+  day: string;
+  matches: number;
+  players: number;
+  signups: number;
+  wordbattle: number;
+  tictactoe: number;
+}
+
+export interface WordStat {
+  word: string;
+  seen: number;
+  solved: number;
+  rate: number;
+}
+
 export interface AdminOverview {
   users: number;
   matches: number;
   rounds: number;
   soloGames: number;
   newUsers: number;
-  perDay: { day: string; count: number }[];
+  activePlayers: number;
+  returning: number;
+  avgRounds: number;
+  solveRate: number;
+  liveSanctions: number;
+  perDay: DayPoint[];
   top: PlayerCard[];
+  hardest: WordStat[];
+  easiest: WordStat[];
 }
 
 function dayKey(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+interface RecentMatch {
+  playedAt: Date | string;
+  mode: 'race' | 'solo';
+  game: GameKey;
+  players: { userId: string }[];
+  rounds: { boards?: { solved?: boolean }[] }[];
 }
 
 export async function adminOverview(days = 14): Promise<AdminOverview | null> {
@@ -564,33 +595,100 @@ export async function adminOverview(days = 14): Promise<AdminOverview | null> {
 
   const since = new Date(Date.now() - days * 86_400_000);
 
-  const [users, matches, soloGames, newUsers, recent, top] = await Promise.all([
-    UserModel.countDocuments({}).exec(),
-    MatchModel.countDocuments({ mode: 'race' }).exec(),
-    MatchModel.countDocuments({ mode: 'solo' }).exec(),
-    UserModel.countDocuments({ createdAt: { $gte: since } }).exec(),
-    MatchModel.find({ playedAt: { $gte: since.toISOString() } })
-      .select({ playedAt: 1, rounds: 1 })
-      .lean<{ playedAt: Date; rounds: unknown[] }[]>()
-      .exec(),
-    UserModel.find({ 'stats.played': { $gt: 0 } })
-      .sort({ 'stats.points': -1, 'stats.won': -1 })
-      .limit(5)
-      .lean<Profile[]>()
-      .exec(),
-  ]);
+  const [users, matches, soloGames, newUsers, recent, signups, top, liveSanctions] =
+    await Promise.all([
+      UserModel.countDocuments({}).exec(),
+      MatchModel.countDocuments({ mode: 'race' }).exec(),
+      MatchModel.countDocuments({ mode: 'solo' }).exec(),
+      UserModel.countDocuments({ createdAt: { $gte: since } }).exec(),
+      MatchModel.find({ playedAt: { $gte: since.toISOString() } })
+        .select({ playedAt: 1, rounds: 1, players: 1, game: 1, mode: 1 })
+        .lean<RecentMatch[]>()
+        .exec(),
+      UserModel.find({ createdAt: { $gte: since } })
+        .select({ createdAt: 1 })
+        .lean<{ createdAt: Date }[]>()
+        .exec(),
+      UserModel.find({ 'stats.played': { $gt: 0 }, banned: { $ne: true } })
+        .sort({ 'stats.points': -1, 'stats.won': -1 })
+        .limit(5)
+        .lean<Profile[]>()
+        .exec(),
+      SanctionModel.countDocuments({ liftedAt: null }).exec(),
+    ]);
 
-  const counts = new Map<string, number>();
+  const buckets = new Map<string, DayPoint>();
+  const seenPerDay = new Map<string, Set<string>>();
+
   for (let i = days - 1; i >= 0; i -= 1) {
-    counts.set(dayKey(new Date(Date.now() - i * 86_400_000)), 0);
+    const day = dayKey(new Date(Date.now() - i * 86_400_000));
+
+    buckets.set(day, {
+      day,
+      matches: 0,
+      players: 0,
+      signups: 0,
+      wordbattle: 0,
+      tictactoe: 0,
+    });
+    seenPerDay.set(day, new Set());
   }
+
+  const daysPlayed = new Map<string, Set<string>>();
+  const activePlayers = new Set<string>();
 
   let rounds = 0;
+  let raceRounds = 0;
+  let boardsPlayed = 0;
+  let boardsSolved = 0;
+
   for (const match of recent) {
+    const day = dayKey(new Date(match.playedAt));
+    const bucket = buckets.get(day);
+
     rounds += match.rounds?.length ?? 0;
-    const key = dayKey(new Date(match.playedAt));
-    if (counts.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (match.mode === 'race') raceRounds += match.rounds?.length ?? 0;
+
+    for (const round of match.rounds ?? []) {
+      for (const board of round.boards ?? []) {
+        boardsPlayed += 1;
+        if (board.solved) boardsSolved += 1;
+      }
+    }
+
+    for (const player of match.players ?? []) {
+      activePlayers.add(player.userId);
+      seenPerDay.get(day)?.add(player.userId);
+
+      const seen = daysPlayed.get(player.userId) ?? new Set<string>();
+      seen.add(day);
+      daysPlayed.set(player.userId, seen);
+    }
+
+    if (!bucket) continue;
+
+    bucket.matches += 1;
+    if (match.game === 'tictactoe') bucket.tictactoe += 1;
+    else bucket.wordbattle += 1;
   }
+
+  for (const [day, players] of seenPerDay) {
+    const bucket = buckets.get(day);
+    if (bucket) bucket.players = players.size;
+  }
+
+  for (const user of signups) {
+    const bucket = buckets.get(dayKey(new Date(user.createdAt)));
+    if (bucket) bucket.signups += 1;
+  }
+
+  let returning = 0;
+  for (const seen of daysPlayed.values()) {
+    if (seen.size > 1) returning += 1;
+  }
+
+  const raceMatches = recent.filter((match) => match.mode === 'race').length;
+  const words = await wordStats();
 
   return {
     users,
@@ -598,8 +696,41 @@ export async function adminOverview(days = 14): Promise<AdminOverview | null> {
     rounds,
     soloGames,
     newUsers,
-    perDay: [...counts].map(([day, count]) => ({ day, count })),
+    activePlayers: activePlayers.size,
+    returning,
+    avgRounds: raceMatches > 0 ? Number((raceRounds / raceMatches).toFixed(1)) : 0,
+    solveRate: boardsPlayed > 0 ? Math.round((boardsSolved / boardsPlayed) * 100) : 0,
+    liveSanctions,
+    perDay: [...buckets.values()],
     top: top.map((doc) => toCard(plain(doc))),
+    hardest: words.hardest,
+    easiest: words.easiest,
+  };
+}
+
+export async function wordStats(): Promise<{ hardest: WordStat[]; easiest: WordStat[] }> {
+  if (!(await connect())) return { hardest: [], easiest: [] };
+
+  const rows = await mongoose.connection
+    .collection('vocab')
+    .aggregate<{ _id: string; seen: number; solved: number }>([
+      { $group: { _id: '$word', seen: { $sum: '$seen' }, solved: { $sum: '$correct' } } },
+      { $match: { seen: { $gte: 2 } } },
+    ])
+    .toArray();
+
+  const stats: WordStat[] = rows.map((row) => ({
+    word: row._id,
+    seen: row.seen,
+    solved: row.solved,
+    rate: row.seen > 0 ? Math.round((row.solved / row.seen) * 100) : 0,
+  }));
+
+  const byRate = [...stats].sort((a, b) => a.rate - b.rate || b.seen - a.seen);
+
+  return {
+    hardest: byRate.slice(0, 5),
+    easiest: [...byRate].reverse().slice(0, 5),
   };
 }
 
