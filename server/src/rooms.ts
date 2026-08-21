@@ -415,6 +415,10 @@ export function reapAbsent(room: Room) {
   return dropped;
 }
 
+export function closeRoom(code: string) {
+  return rooms.delete(code.toUpperCase());
+}
+
 export function allRoomCodes() {
   return [...rooms.keys()];
 }

@@ -48,6 +48,27 @@
 }
 
 @layer utilities {
+  .tile-flip {
+    animation: tile-flip 480ms ease both;
+    backface-visibility: hidden;
+  }
+
+  .tile-pop {
+    animation: tile-pop 120ms ease-out both;
+  }
+
+  .shake {
+    animation: shake 420ms ease both;
+  }
+
+  .cheer {
+    animation: cheer 700ms ease-out both;
+  }
+
+  .slide-up {
+    animation: slide-up 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -80,5 +101,88 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes tile-flip {
+  0% {
+    transform: rotateX(0deg);
+  }
+  45% {
+    transform: rotateX(90deg);
+  }
+  55% {
+    transform: rotateX(90deg);
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+@keyframes tile-pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes cheer {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-flip,
+  .tile-pop,
+  .shake,
+  .cheer,
+  .slide-up,
+  .pop-in,
+  .fade-in {
+    animation: none;
   }
 }

@@ -25,3 +25,37 @@ export function syncBans(userId: string) {
 export function announce(message: string) {
   return post('/announce', { message });
 }
+
+export interface LiveRoom {
+  code: string;
+  game: string;
+  mode: string;
+  phase: string;
+  round: number;
+  rounds: number;
+  visibility: string;
+  players: { id: string; name: string; connected: boolean; score: number }[];
+}
+
+export async function liveRooms(): Promise<LiveRoom[] | null> {
+  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  if (!secret) return null;
+
+  try {
+    const res = await fetch(`${serverUrl}/admin/rooms`, {
+      headers: { 'x-internal-secret': secret },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) return null;
+
+    const body = (await res.json()) as { rooms?: LiveRoom[] };
+    return body.rooms ?? [];
+  } catch {
+    return null;
+  }
+}
+
+export function closeRoom(code: string) {
+  return post('/admin/close', { code });
+}

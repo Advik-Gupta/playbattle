@@ -8,6 +8,7 @@ import { Toaster } from '@/components/toaster';
 import { InviteDialog } from '@/components/invite-dialog';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Avatar } from '@/components/avatar';
+import { NotifyPrompt } from '@/components/notify-prompt';
 
 export async function SiteHeader() {
   const session = await auth();
@@ -56,6 +57,7 @@ export async function SiteHeader() {
             <Realtime id={session.user.id} name={name} avatar={profile?.avatar ?? ''} />
             <Toaster />
             <InviteDialog />
+            <NotifyPrompt />
           </div>
         )}
       </div>

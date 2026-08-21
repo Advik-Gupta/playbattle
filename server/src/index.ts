@@ -43,6 +43,7 @@ import {
 import {
   allRoomCodes,
   banAndDrop,
+  closeRoom,
   createRoom,
   createSolo,
   endRound,
@@ -111,6 +112,59 @@ app.get('/rooms', (req, res) => {
   }
 
   res.json({ rooms: openRooms() });
+});
+
+app.get('/admin/rooms', (req, res) => {
+  const secret = process.env.INTERNAL_API_SECRET ?? '';
+
+  if (!secret || req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const rooms = allRoomCodes()
+    .map((code) => getRoom(code))
+    .filter((room): room is Room => Boolean(room))
+    .map((room) => ({
+      code: room.code,
+      game: room.config.game,
+      mode: room.config.mode,
+      phase: room.phase,
+      round: room.round,
+      rounds: room.config.rounds,
+      visibility: room.config.visibility,
+      players: [...room.players.values()].map((player) => ({
+        id: player.profile.id,
+        name: player.profile.name,
+        connected: player.socketId !== null,
+        score: player.score,
+      })),
+    }));
+
+  res.json({ rooms });
+});
+
+app.post('/admin/close', (req, res) => {
+  const secret = process.env.INTERNAL_API_SECRET ?? '';
+
+  if (!secret || req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const code = String(req.body?.code ?? '').toUpperCase();
+  const room = getRoom(code);
+
+  if (!room) {
+    res.status(404).json({ error: 'room not found' });
+    return;
+  }
+
+  io.to(code).emit('room:closed', 'an admin closed this room');
+  closeRoom(code);
+  console.log('admin closed room', code);
+
+  res.json({ ok: true });
 });
 
 app.post('/bans/sync', async (req, res) => {

@@ -15,6 +15,7 @@ import { DEFAULT_AVATAR, isAvatarId } from '@/lib/avatars';
 import { GAME_LIST } from '@/components/games/registry';
 import { Avatar } from '@/components/avatar';
 import { AvatarPicker } from '@/components/avatar-picker';
+import { NotifyToggle } from '@/components/notify-prompt';
 import { Bars, FormRow } from '@/components/charts/bars';
 import { Donut } from '@/components/charts/donut';
 import { Sparkline } from '@/components/charts/sparkline';
@@ -193,6 +194,11 @@ export default async function ProfilePage({
 
                 <Button type="submit">Save</Button>
               </form>
+
+              <div className="border-t border-border pt-4">
+                <p className="mb-2 text-sm font-medium">Notifications</p>
+                <NotifyToggle />
+              </div>
             </CardContent>
           </Card>
         </div>

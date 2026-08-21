@@ -6,6 +6,7 @@ import { useSocket, type GameSocket } from '@/lib/socket';
 import { Board, MiniBoard } from '@/components/games/wordbattle/board';
 import { Keyboard } from '@/components/games/wordbattle/keyboard';
 import { Button } from '@/components/ui/button';
+import { Confetti } from '@/components/confetti';
 import { DefinitionCard } from '@/components/definition-card';
 
 function useCountdown(deadline: number | null, serverNow: number) {
@@ -45,6 +46,7 @@ export function WordBattleView({
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [pulsing, setPulsing] = useState<string | null>(null);
+  const [shaking, setShaking] = useState(false);
   const clearRoom = useSocket((s) => s.clearRoom);
 
   const me = room.players.find((p) => p.profile.id === userId);
@@ -74,6 +76,8 @@ export function WordBattleView({
   const send = useCallback(() => {
     if (draft.length !== WORD_LENGTH) {
       setError('needs five letters');
+      setShaking(true);
+      setTimeout(() => setShaking(false), 450);
       return;
     }
 
@@ -81,9 +85,12 @@ export function WordBattleView({
       if (res.ok) {
         setDraft('');
         setError('');
-      } else {
-        setError(res.error);
+        return;
       }
+
+      setError(res.error);
+      setShaking(true);
+      setTimeout(() => setShaking(false), 450);
     });
   }, [draft, socket]);
 
@@ -97,8 +104,11 @@ export function WordBattleView({
 
   const back = useCallback(() => setDraft((current) => current.slice(0, -1)), []);
 
+  const celebrating = room.phase === 'match_over' && room.matchWinnerId === userId;
+
   return (
     <div className="space-y-6">
+      <Confetti active={celebrating} />
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium">
           {isSolo ? 'Solo' : `Round ${room.round} of ${room.config.rounds}`}
@@ -116,6 +126,7 @@ export function WordBattleView({
             guesses={me?.guesses ?? []}
             draft={locked ? '' : draft}
             rows={room.config.maxGuesses}
+            shaking={shaking}
           />
         </div>
 
@@ -228,7 +239,7 @@ export function WordBattleView({
       {error && <p className="text-center text-sm text-red-500">{error}</p>}
 
       {room.phase === 'match_over' ? (
-        <div className="space-y-3 text-center">
+        <div className="cheer space-y-3 text-center">
           <p className="text-lg font-semibold">
             {isSolo
               ? me?.solved

@@ -1,13 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CPU_ID, type RoomState } from '@/lib/protocol';
 import { useSocket, type GameSocket } from '@/lib/socket';
 import { TicTacToeBoard } from '@/components/games/tictactoe/board';
 import { Button } from '@/components/ui/button';
+import { Confetti } from '@/components/confetti';
 
 function useCountdown(deadline: number | null, serverNow: number) {
   const [left, setLeft] = useState<number | null>(null);
+  const offset = useRef(0);
+
+  useEffect(() => {
+    offset.current = serverNow - Date.now();
+  }, [serverNow]);
 
   useEffect(() => {
     if (deadline === null) {
@@ -15,13 +21,13 @@ function useCountdown(deadline: number | null, serverNow: number) {
       return;
     }
 
-    const offset = serverNow - Date.now();
-    const tick = () => setLeft(Math.max(0, Math.round((deadline - Date.now() - offset) / 1000)));
+    const tick = () =>
+      setLeft(Math.max(0, Math.round((deadline - Date.now() - offset.current) / 1000)));
 
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
-  }, [deadline, serverNow]);
+  }, [deadline]);
 
   return left;
 }
@@ -64,8 +70,11 @@ export function TicTacToeView({
   const last = room.history[room.history.length - 1];
   const showResult = room.phase === 'round_over' || room.phase === 'match_over';
 
+  const celebrating = room.phase === 'match_over' && room.matchWinnerId === userId;
+
   return (
     <div className="space-y-5">
+      <Confetti active={celebrating} />
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium">
           Round {room.round} of {room.config.rounds}
@@ -115,7 +124,7 @@ export function TicTacToeView({
       {error && <p className="text-center text-sm text-red-500">{error}</p>}
 
       {room.phase === 'match_over' && (
-        <div className="space-y-3 text-center">
+        <div className="cheer space-y-3 text-center">
           <p className="text-lg font-semibold">
             {room.matchDraw
               ? 'Match drawn'

@@ -2,6 +2,7 @@
 
 import { io, type Socket } from 'socket.io-client';
 import { create } from 'zustand';
+import { notify } from '@/lib/notify';
 import type {
   ChatMessage,
   ClientToServerEvents,
@@ -70,6 +71,18 @@ export const useSocket = create<SocketStore>((set, get) => ({
       }));
     });
 
+    socket.on('invite:received', (invite) => {
+      notify('Game invite', `${invite.fromName} wants to play`);
+    });
+
+    socket.on('queue:matched', () => {
+      notify('Opponent found', 'Your match is ready');
+    });
+
+    socket.on('room:joinRequest', (request) => {
+      notify('Someone wants in', `${request.name} is asking to join your room`);
+    });
+
     socket.on('room:joinResponse', ({ accepted }) => {
       toastId += 1;
       set((state) => ({
@@ -130,7 +143,7 @@ export const useSocket = create<SocketStore>((set, get) => ({
 
     socket.on('toast', ({ kind, message }) => {
       toastId += 1;
-      set((state) => ({ toasts: [...state.toasts, { id: toastId, kind, message }] }));
+      set((state) => ({ toasts: [...state.toasts, { id: toastId, kind, message }].slice(-4) }));
     });
 
     set({ socket });

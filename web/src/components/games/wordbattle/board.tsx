@@ -13,12 +13,15 @@ export function Board({
   guesses,
   draft,
   rows,
+  shaking,
 }: {
   guesses: OwnGuess[];
   draft: string;
   rows: number;
+  shaking?: boolean;
 }) {
   const filled = guesses.length;
+  const latest = filled - 1;
 
   return (
     <div className="grid gap-1.5">
@@ -27,7 +30,13 @@ export function Board({
         const isDraft = row === filled;
 
         return (
-          <div key={row} className="grid grid-cols-5 gap-1.5">
+          <div
+            key={row}
+            className={cn(
+              'grid grid-cols-5 gap-1.5',
+              shaking && isDraft ? 'shake' : '',
+            )}
+          >
             {Array.from({ length: WORD_LENGTH }).map((_, col) => {
               const letter = guess ? guess.word[col] : isDraft ? (draft[col] ?? '') : '';
               const tile = guess?.tiles[col];
@@ -38,8 +47,12 @@ export function Board({
                   className={cn(
                     'flex aspect-square items-center justify-center rounded-md border-2 text-xl font-semibold uppercase transition-colors sm:text-2xl',
                     tile ? TILE_STYLE[tile] : 'border-border',
-                    !tile && letter ? 'border-muted-foreground/60' : '',
+                    !tile && letter ? 'border-muted-foreground/60 tile-pop' : '',
+                    tile && row === latest ? 'tile-flip' : '',
                   )}
+                  style={
+                    tile && row === latest ? { animationDelay: `${col * 90}ms` } : undefined
+                  }
                 >
                   {letter}
                 </div>

@@ -36,7 +36,7 @@ export function TicTacToeBoard({
                 ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600'
                 : 'border-border bg-card',
               !owner && !disabled && 'hover:border-primary/60 hover:bg-accent active:scale-95',
-              lastMove === index && !winning && 'border-primary/60',
+              lastMove === index && !winning && 'border-primary/60 tile-pop',
               mark === 'X' ? 'text-primary' : '',
             )}
           >
