@@ -7,14 +7,14 @@ const labels: Record<Status, string> = {
   idle: 'connecting',
   connecting: 'connecting',
   online: 'online',
-  offline: 'offline',
+  offline: 'reconnecting',
 };
 
 const dots: Record<Status, string> = {
   idle: 'bg-muted-foreground',
   connecting: 'bg-muted-foreground animate-pulse',
   online: 'bg-emerald-500',
-  offline: 'bg-red-500',
+  offline: 'bg-red-500 animate-pulse',
 };
 
 export function ConnectionStatus() {

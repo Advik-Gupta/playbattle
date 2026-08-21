@@ -367,6 +367,16 @@ export async function recentMatches(userId: string, limit = 5): Promise<MatchRec
   return docs.map(plain);
 }
 
+export async function matchById(matchId: string, userId: string): Promise<MatchRecord | null> {
+  if (!(await connect())) return null;
+
+  const doc = await MatchModel.findOne({ matchId }).lean<MatchRecord>().exec();
+  if (!doc) return null;
+  if (!doc.players.some((player) => player.userId === userId)) return null;
+
+  return plain(doc);
+}
+
 export async function matchCount(userId: string): Promise<number> {
   if (!(await connect())) return 0;
   return MatchModel.countDocuments({ 'players.userId': userId }).exec();

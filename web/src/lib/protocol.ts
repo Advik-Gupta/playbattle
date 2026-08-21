@@ -284,6 +284,7 @@ export interface ServerToClientEvents {
   'room:joinRequest': (request: JoinRequest) => void;
   'room:joinResponse': (payload: { code: string; accepted: boolean }) => void;
   'sanction:notice': (sanction: Sanction) => void;
+  'room:resume': (payload: { code: string; phase: RoomPhase }) => void;
   toast: (payload: { kind: 'info' | 'error' | 'success'; message: string }) => void;
 }
 

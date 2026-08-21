@@ -18,6 +18,7 @@ export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
   const status = useSocket((s) => s.status);
   const room = useSocket((s) => s.room);
   const clearRoom = useSocket((s) => s.clearRoom);
+  const resumed = useSocket((s) => s.resumed);
 
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -97,6 +98,17 @@ export function RoomPanel({ userId, game }: { userId: string; game: GameId }) {
     socket?.emit('room:config', patch, (res) => {
       if (!res.ok) setError(res.error);
     });
+  }
+
+  if (!room && resumed && status === 'online') {
+    return (
+      <Card>
+        <CardContent className="space-y-3 p-6 text-center">
+          <p className="text-sm font-medium">Putting you back in room {resumed}</p>
+          <p className="text-sm text-muted-foreground">One moment.</p>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (!room) {

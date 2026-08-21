@@ -26,6 +26,7 @@ interface SocketStore {
   socket: GameSocket | null;
   status: ConnectionStatus;
   room: RoomState | null;
+  resumed: string | null;
   messages: ChatMessage[];
   toasts: Toast[];
   connect: (profile: PlayerProfile) => void;
@@ -40,6 +41,7 @@ export const useSocket = create<SocketStore>((set, get) => ({
   socket: null,
   status: 'idle',
   room: null,
+  resumed: null,
   messages: [],
   toasts: [],
 
@@ -60,12 +62,24 @@ export const useSocket = create<SocketStore>((set, get) => ({
 
     socket.on('room:state', (room) => set({ room }));
 
+    socket.on('room:resume', ({ code }) => {
+      toastId += 1;
+      set((state) => ({
+        resumed: code,
+        toasts: [
+          ...state.toasts,
+          { id: toastId, kind: 'info' as const, message: `back in room ${code}` },
+        ].slice(-4),
+      }));
+    });
+
     socket.on('chat:history', (messages) => set({ messages }));
 
     socket.on('room:removed', (reason) => {
       toastId += 1;
       set((state) => ({
         room: null,
+        resumed: null,
         messages: [],
         toasts: [...state.toasts, { id: toastId, kind: 'error', message: reason }],
       }));
@@ -151,10 +165,10 @@ export const useSocket = create<SocketStore>((set, get) => ({
 
   disconnect: () => {
     get().socket?.close();
-    set({ socket: null, status: 'idle', room: null, messages: [] });
+    set({ socket: null, status: 'idle', room: null, resumed: null, messages: [] });
   },
 
-  clearRoom: () => set({ room: null, messages: [] }),
+  clearRoom: () => set({ room: null, resumed: null, messages: [] }),
 
   dismiss: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));

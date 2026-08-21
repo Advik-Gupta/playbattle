@@ -1,5 +1,6 @@
 import type { MatchRecord } from '@/lib/db';
 import { gameMeta } from '@/components/games/registry';
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 
 function when(value: string) {
@@ -38,8 +39,12 @@ export function MatchHistory({
         const drew = match.winnerId === null;
 
         return (
-          <Card key={match.matchId}>
-            <CardContent className="flex items-center justify-between gap-4 p-4">
+          <Card key={match.matchId} className="transition-colors hover:border-primary/50">
+            <CardContent className="flex items-center justify-between gap-4 p-0">
+              <Link
+                href={`/history/${match.matchId}`}
+                className="flex flex-1 items-center justify-between gap-4 p-4"
+              >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">
                   vs {others.map((player) => player.name).join(', ') || 'nobody'}
@@ -70,6 +75,7 @@ export function MatchHistory({
                   {drew ? 'draw' : won ? 'win' : 'loss'}
                 </span>
               </div>
+              </Link>
             </CardContent>
           </Card>
         );

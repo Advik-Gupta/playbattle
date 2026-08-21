@@ -415,6 +415,25 @@ export function reapAbsent(room: Room) {
   return dropped;
 }
 
+export function roomOf(userId: string) {
+  for (const room of rooms.values()) {
+    if (room.players.has(userId)) return room;
+  }
+
+  return null;
+}
+
+export function reseat(room: Room, userId: string, socketId: string) {
+  const player = room.players.get(userId);
+  if (!player) return false;
+
+  player.socketId = socketId;
+  player.leftAt = null;
+  room.emptySince = null;
+
+  return true;
+}
+
 export function closeRoom(code: string) {
   return rooms.delete(code.toUpperCase());
 }

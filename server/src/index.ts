@@ -59,6 +59,8 @@ import {
   markDisconnected,
   queueSize,
   reapAbsent,
+  reseat,
+  roomOf,
   removePlayer,
   resign,
   respondToJoin,
@@ -332,6 +334,23 @@ io.on('connection', (socket) => {
 
   presenceConnected(profile.id, socket.id);
   announcePresence(profile.id);
+
+  const existing = roomOf(profile.id);
+  if (existing && existing.phase !== 'match_over') {
+    reseat(existing, profile.id, socket.id);
+    socket.join(existing.code);
+    socket.data.roomCode = existing.code;
+    setRoom(profile.id, existing.code);
+
+    socket.emit('room:resume', { code: existing.code, phase: existing.phase });
+    socket.emit('chat:history', history(existing.code));
+    push(existing);
+
+    io.to(existing.code).emit(
+      'chat:message',
+      systemMessage(existing.code, `${profile.name} is back`),
+    );
+  }
 
   const warning = pendingWarning(profile.id);
   if (warning) {
