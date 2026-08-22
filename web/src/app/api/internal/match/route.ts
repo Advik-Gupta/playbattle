@@ -29,7 +29,8 @@ export async function POST(request: Request) {
     code: body.code ?? '',
     mode: body.mode === 'solo' || body.mode === 'daily' ? body.mode : 'race',
     day: typeof body.day === 'string' ? body.day : null,
-    game: body.game === 'tictactoe' ? 'tictactoe' : 'wordbattle',
+    game:
+      body.game === 'tictactoe' || body.game === 'anagram' ? body.game : 'wordbattle',
     players: body.players,
     winnerId: body.winnerId ?? null,
     rounds: Array.isArray(body.rounds) ? body.rounds : [],

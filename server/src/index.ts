@@ -59,6 +59,7 @@ import {
   dropJoinRequest,
   leaveRoom,
   makeMove,
+  playWord,
   markDisconnected,
   queueSize,
   reapAbsent,
@@ -623,7 +624,23 @@ io.on('connection', (socket) => {
     scheduleCpu(result.room);
   });
 
+  socket.on('game:word', (word, ack) => {
+    if (!guard('game:guess', ack)) return;
+
+    const code = socket.data.roomCode;
+    if (!code) return ack({ ok: false, error: 'not in a room' });
+
+    const result = playWord(code, profile.id, word);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    socket.to(result.room.code).emit('game:opponentGuessed', profile.id);
+    push(result.room);
+    ack({ ok: true, data: result.found });
+  });
+
   socket.on('game:skip', (ack) => {
+    if (!guard('game:skip', ack)) return;
+
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
 

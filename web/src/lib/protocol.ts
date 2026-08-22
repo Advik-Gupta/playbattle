@@ -6,11 +6,12 @@ export const WORD_LENGTH = 5;
 
 export type GameMode = 'race' | 'solo' | 'daily';
 
-export type GameId = 'wordbattle' | 'tictactoe';
+export type GameId = 'wordbattle' | 'tictactoe' | 'anagram';
 
 export const GAMES: { id: GameId; name: string; tagline: string }[] = [
   { id: 'wordbattle', name: 'WordBattle', tagline: 'Guess the word before they do' },
   { id: 'tictactoe', name: 'Tic Tac Toe', tagline: 'Three in a row, best of three' },
+  { id: 'anagram', name: 'Anagram Rush', tagline: 'One letter pool, sixty seconds' },
 ];
 
 export const CPU_ID = 'cpu';
@@ -77,6 +78,18 @@ export const DAILY_CONFIG: RoomConfig = {
   maxPlayers: 1,
   visibility: 'private',
 };
+
+export const ANAGRAM_CONFIG: RoomConfig = {
+  game: 'anagram',
+  mode: 'race',
+  rounds: 3,
+  secondsPerRound: 60,
+  maxGuesses: 0,
+  maxPlayers: 4,
+  visibility: 'private',
+};
+
+export const ANAGRAM_MIN_LENGTH = 3;
 
 export const MAX_HINTS = 2;
 
@@ -151,6 +164,19 @@ export interface RoundSummary {
   draw: boolean;
   boards: RevealedBoard[];
   ttt?: { board: (string | null)[]; line: number[] | null };
+  pool?: string;
+}
+
+export interface FoundWord {
+  word: string;
+  points: number;
+}
+
+export interface AnagramState {
+  pool: string[];
+  found: FoundWord[] | null;
+  counts: Record<string, number>;
+  best: number;
 }
 
 export interface TicTacToeState {
@@ -177,6 +203,7 @@ export interface RoomState {
   votekicks: VoteKick[];
   joinRequests: JoinRequest[];
   ttt: TicTacToeState | null;
+  anagram: AnagramState | null;
 }
 
 export interface JoinRequest {
@@ -263,6 +290,7 @@ export interface ClientToServerEvents {
   'room:remove': (targetId: string, ack: (res: Ack<null>) => void) => void;
   'game:skip': (ack: (res: Ack<null>) => void) => void;
   'game:move': (index: number, ack: (res: Ack<null>) => void) => void;
+  'game:word': (word: string, ack: (res: Ack<FoundWord>) => void) => void;
   'room:join': (
     code: string,
     ack: (res: Ack<{ code: string; pending?: boolean }>) => void,

@@ -1,4 +1,4 @@
-import { BookOpen, Grid3x3, type LucideIcon } from 'lucide-react';
+import { BookOpen, Grid3x3, Shuffle, type LucideIcon } from 'lucide-react';
 import type { GameId } from '@/lib/protocol';
 
 export interface GameMeta {
@@ -30,6 +30,16 @@ export const GAME_LIST: GameMeta[] = [
     description: 'Quick rounds, swapping who goes first each time.',
     icon: Grid3x3,
     accent: 'from-sky-500/20 to-transparent',
+    hasSolo: true,
+    hasWords: false,
+  },
+  {
+    id: 'anagram',
+    name: 'Anagram Rush',
+    tagline: 'One letter pool, sixty seconds',
+    description: 'Seven letters. Build as many words as you can before the clock runs out.',
+    icon: Shuffle,
+    accent: 'from-amber-500/20 to-transparent',
     hasSolo: true,
     hasWords: false,
   },

@@ -121,7 +121,7 @@ export interface MatchRound {
   }[];
 }
 
-export type GameKey = 'wordbattle' | 'tictactoe';
+export type GameKey = 'wordbattle' | 'tictactoe' | 'anagram';
 
 export interface GameTally {
   played: number;
@@ -164,6 +164,7 @@ const userSchema = new Schema(
     games: {
       wordbattle: { played: { type: Number, default: 0 }, won: { type: Number, default: 0 } },
       tictactoe: { played: { type: Number, default: 0 }, won: { type: Number, default: 0 } },
+      anagram: { played: { type: Number, default: 0 }, won: { type: Number, default: 0 } },
     },
     solo: {
       played: { type: Number, default: 0 },

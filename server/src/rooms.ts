@@ -6,6 +6,7 @@ import {
   MAX_HINTS,
   MAX_ROOM_PLAYERS,
   ROOM_CODE_LENGTH,
+  ANAGRAM_CONFIG,
   DAILY_CONFIG,
   SOLO_CONFIG,
   TICTACTOE_CONFIG,
@@ -21,15 +22,18 @@ import {
   type RoomState,
   type GameId,
   type JoinRequest,
+  type FoundWord,
   type OpenRoom,
   type RoundSummary,
   type TicTacToeState,
+  type AnagramState,
   type VoteKick,
   type Tile,
 } from './protocol.js';
 import { gameFor } from './games/index.js';
 import { mergeKeyboard, pointsFor, scoreGuess, solved } from './games/wordbattle.js';
 import { applyMove, cpuMove, pointsForRound } from './games/tictactoe.js';
+import { serializeAnagram, submitWord } from './games/anagram.js';
 import { isWord, randomWord } from './words.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -48,6 +52,7 @@ interface Player {
   place: number | null;
   hints: HintReveal[];
   resigned: boolean;
+  found: FoundWord[];
 }
 
 export interface Room {
@@ -63,6 +68,7 @@ export interface Room {
   roundStartedAt: number | null;
   usedAnswers: string[];
   ttt: TicTacToeState | null;
+  anagram: AnagramState | null;
   history: RoundSummary[];
   matchWinnerId: string | null;
   matchDraw: boolean;
@@ -92,7 +98,26 @@ function pick<T extends number>(allowed: readonly T[], value: unknown, fallback:
 }
 
 export function sanitizeConfig(input: Partial<RoomConfig> = {}): RoomConfig {
-  const game: GameId = input.game === 'tictactoe' ? 'tictactoe' : 'wordbattle';
+  const game: GameId =
+    input.game === 'tictactoe' || input.game === 'anagram' ? input.game : 'wordbattle';
+
+  if (game === 'anagram') {
+    const solo = input.mode === 'solo';
+
+    return {
+      game,
+      mode: solo ? 'solo' : 'race',
+      rounds: pick(CONFIG_LIMITS.rounds, input.rounds, ANAGRAM_CONFIG.rounds),
+      secondsPerRound: pick(
+        CONFIG_LIMITS.secondsPerRound,
+        input.secondsPerRound,
+        ANAGRAM_CONFIG.secondsPerRound,
+      ),
+      maxGuesses: 0,
+      maxPlayers: solo ? 1 : pick(CONFIG_LIMITS.maxPlayers, input.maxPlayers, ANAGRAM_CONFIG.maxPlayers),
+      visibility: input.visibility === 'open' ? 'open' : 'private',
+    };
+  }
 
   if (game === 'tictactoe') {
     const solo = input.mode === 'solo';
@@ -144,6 +169,7 @@ function blankPlayer(profile: PlayerProfile, socketId: string | null): Player {
     place: null,
     hints: [],
     resigned: false,
+    found: [],
   };
 }
 
@@ -156,6 +182,7 @@ function resetBoards(room: Room) {
     player.place = null;
     player.hints = [];
     player.resigned = false;
+    player.found = [];
   }
 }
 
@@ -177,6 +204,7 @@ export function createRoom(profile: PlayerProfile, socketId: string, config: Par
     roundStartedAt: null,
     usedAnswers: [],
     ttt: null,
+    anagram: null,
     history: [],
     matchWinnerId: null,
     matchDraw: false,
@@ -368,6 +396,7 @@ export function serialize(room: Room, viewerId: string): RoomState {
     votekicks: room.votekicks,
     joinRequests: room.hostId === viewerId ? room.joinRequests : [],
     ttt: room.ttt,
+    anagram: serializeAnagram(room, viewerId),
   };
 }
 
@@ -589,6 +618,18 @@ export function endRound(room: Room): RoundSummary {
   return summary;
 }
 
+export function playWord(code: string, userId: string, word: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.config.game !== 'anagram') return { ok: false, error: 'wrong game' } as const;
+  if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
+
+  const result = submitWord(room, userId, word);
+  if (!result.ok) return { ok: false, error: result.error } as const;
+
+  return { ok: true, room, found: result.found } as const;
+}
+
 export function makeMove(code: string, userId: string, index: number) {
   const room = getRoom(code);
   if (!room) return { ok: false, error: 'room not found' } as const;
@@ -642,7 +683,9 @@ export function rematch(code: string, userId: string) {
 export function resign(code: string, userId: string) {
   const room = getRoom(code);
   if (!room) return { ok: false, error: 'room not found' } as const;
-  if (room.config.game !== 'wordbattle') return { ok: false, error: 'wrong game' } as const;
+  if (room.config.game === 'tictactoe') {
+    return { ok: false, error: 'you cannot pass a turn game' } as const;
+  }
   if (room.phase !== 'playing') return { ok: false, error: 'no round running' } as const;
 
   const player = room.players.get(userId);

@@ -6,6 +6,7 @@ multiplayer games in the browser. next.js on the front, socket.io server for the
 
 - **wordbattle** — five letters, six guesses, up to four people racing each other. solo mode with hints too.
 - **tic tac toe** — best of three, the opener swaps each round. play a friend or the computer.
+- **anagram rush** — seven letters, sixty seconds, build as many words as you can.
 - **daily word** — one word a day, same for everyone, with its own streak and board.
 
 ## what's in it
