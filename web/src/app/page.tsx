@@ -100,6 +100,22 @@ export default async function Home() {
         </div>
 
         <div className="mt-6 max-w-md">
+          <Card className="mb-4">
+            <CardContent className="flex items-center justify-between gap-4 p-6">
+              <div>
+                <p className="font-semibold tracking-tight">Daily word</p>
+                <p className="text-sm text-muted-foreground">
+                  {profile?.daily?.streak
+                    ? `${profile.daily.streak} day streak going`
+                    : 'One word a day, same for everyone.'}
+                </p>
+              </div>
+              <Button asChild>
+                <Link href="/daily">Play</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="flex items-center justify-between gap-4 p-6">
               <div>

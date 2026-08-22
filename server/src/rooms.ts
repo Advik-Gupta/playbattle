@@ -6,6 +6,7 @@ import {
   MAX_HINTS,
   MAX_ROOM_PLAYERS,
   ROOM_CODE_LENGTH,
+  DAILY_CONFIG,
   SOLO_CONFIG,
   TICTACTOE_CONFIG,
   TICTACTOE_SOLO_CONFIG,
@@ -111,6 +112,7 @@ export function sanitizeConfig(input: Partial<RoomConfig> = {}): RoomConfig {
     };
   }
 
+  if (input.mode === 'daily') return { ...DAILY_CONFIG };
   if (input.mode === 'solo') return { ...SOLO_CONFIG };
 
   return {
@@ -448,13 +450,23 @@ export function roomCount() {
 
 export function everyoneReady(room: Room) {
   const active = [...room.players.values()].filter((p) => p.socketId !== null);
-  const needed = room.config.mode === 'solo' ? 1 : 2;
+  const needed = room.config.mode === 'race' ? 2 : 1;
   return active.length >= needed && active.every((p) => p.ready);
 }
 
 export function createSolo(profile: PlayerProfile, socketId: string, config: Partial<RoomConfig>) {
   const room = createRoom(profile, socketId, { ...config, mode: 'solo' });
   startRound(room);
+  return room;
+}
+
+export function createDaily(profile: PlayerProfile, socketId: string, word: string) {
+  const room = createRoom(profile, socketId, { mode: 'daily' });
+
+  startRound(room);
+  room.answer = word;
+  room.usedAnswers = [word];
+
   return room;
 }
 

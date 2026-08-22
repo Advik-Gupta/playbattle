@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, Home, Swords, Trophy, Users } from 'lucide-react';
+import { BookOpen, CalendarDays, Home, Swords, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const LINKS = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/play', label: 'Play', icon: Swords },
-  { href: '/players', label: 'Players', icon: Users },
+  { href: '/daily', label: 'Daily', icon: CalendarDays },
   { href: '/dictionary', label: 'Words', icon: BookOpen },
   { href: '/leaderboard', label: 'Ranks', icon: Trophy },
 ];

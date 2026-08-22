@@ -58,6 +58,22 @@ export interface PlayerCard {
   points: number;
 }
 
+export interface DailyStats {
+  played: number;
+  solves: number;
+  streak: number;
+  bestStreak: number;
+  lastDay: string;
+}
+
+export const EMPTY_DAILY: DailyStats = {
+  played: 0,
+  solves: 0,
+  streak: 0,
+  bestStreak: 0,
+  lastDay: '',
+};
+
 export interface SoloStats {
   played: number;
   solves: number;
@@ -84,6 +100,7 @@ export interface Profile {
   avatar: string;
   stats: Stats;
   solo: SoloStats;
+  daily: DailyStats;
   games?: Record<GameKey, GameTally>;
   banned?: boolean;
   createdAt?: Date;
@@ -111,10 +128,13 @@ export interface GameTally {
   won: number;
 }
 
+export type MatchMode = 'race' | 'solo' | 'daily';
+
 export interface MatchRecord {
   matchId: string;
   code: string;
-  mode: 'race' | 'solo';
+  mode: MatchMode;
+  day?: string | null;
   game: GameKey;
   players: { userId: string; name: string; score: number }[];
   winnerId: string | null;
@@ -153,6 +173,13 @@ const userSchema = new Schema(
       bestStreak: { type: Number, default: 0 },
       hints: { type: Number, default: 0 },
     },
+    daily: {
+      played: { type: Number, default: 0 },
+      solves: { type: Number, default: 0 },
+      streak: { type: Number, default: 0 },
+      bestStreak: { type: Number, default: 0 },
+      lastDay: { type: String, default: '' },
+    },
   },
   { collection: 'users', timestamps: true },
 );
@@ -162,6 +189,7 @@ const matchSchema = new Schema(
     matchId: { type: String, required: true, unique: true, index: true },
     code: { type: String, default: '' },
     mode: { type: String, default: 'race', index: true },
+    day: { type: String, default: null, index: true },
     game: { type: String, default: 'wordbattle', index: true },
     players: [
       {
@@ -252,6 +280,7 @@ export const getProfile = cache(async (userId: string): Promise<Profile | null> 
   const profile = plain(doc);
   profile.stats = { ...EMPTY_STATS, ...(profile.stats ?? {}) };
   profile.solo = { ...EMPTY_SOLO, ...(profile.solo ?? {}) };
+  profile.daily = { ...EMPTY_DAILY, ...(profile.daily ?? {}) };
   return profile;
 });
 
@@ -273,7 +302,8 @@ export async function saveProfile(
 export interface MatchInput {
   matchId: string;
   code: string;
-  mode: 'race' | 'solo';
+  mode: MatchMode;
+  day?: string | null;
   game: GameKey;
   players: { userId: string; name: string; score: number }[];
   winnerId: string | null;
@@ -285,6 +315,18 @@ export async function recordMatch(input: MatchInput): Promise<boolean> {
 
   const existing = await MatchModel.findOne({ matchId: input.matchId }).lean().exec();
   if (existing) return true;
+
+  if (input.mode === 'daily') {
+    const played = await MatchModel.findOne({
+      mode: 'daily',
+      day: input.day ?? '',
+      'players.userId': input.players[0]?.userId,
+    })
+      .lean()
+      .exec();
+
+    if (played) return true;
+  }
 
   await MatchModel.create({ ...input, playedAt: new Date().toISOString() });
 
@@ -298,6 +340,35 @@ export async function recordMatch(input: MatchInput): Promise<boolean> {
     const profile = await getProfile(player.userId);
     const solves = boards.filter((board) => board.solved).length;
     const guesses = boards.reduce((total, board) => total + board.words.length, 0);
+
+    if (input.mode === 'daily') {
+      const day = input.day ?? '';
+      const solved = boards.some((board) => board.solved);
+      const previous = profile?.daily ?? EMPTY_DAILY;
+
+      if (previous.lastDay === day) continue;
+
+      const yesterday = new Date(new Date(`${day}T00:00:00Z`).getTime() - 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      const continues = solved && previous.lastDay === yesterday;
+      const streak = solved ? (continues ? previous.streak + 1 : 1) : 0;
+
+      await UserModel.updateOne(
+        { userId: player.userId },
+        {
+          $inc: { 'daily.played': 1, 'daily.solves': solved ? 1 : 0 },
+          $set: {
+            'daily.streak': streak,
+            'daily.bestStreak': Math.max(streak, previous.bestStreak),
+            'daily.lastDay': day,
+          },
+        },
+        { upsert: true },
+      ).exec();
+
+      continue;
+    }
 
     if (input.mode === 'solo') {
       const cleanSolve = boards.every((board) => board.solved && board.hints === 0);
@@ -1071,4 +1142,73 @@ export async function acknowledgeNotices(userId: string) {
 
   await SanctionModel.updateMany({ userId, acknowledged: false }, { $set: { acknowledged: true } }).exec();
   return true;
+}
+
+export function todayKey(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+
+export interface DailyEntry {
+  userId: string;
+  displayName: string;
+  avatar: string;
+  guesses: number;
+  solved: boolean;
+  ms: number | null;
+}
+
+export async function dailyResult(userId: string, day = todayKey()) {
+  if (!(await connect())) return null;
+
+  const doc = await MatchModel.findOne({ mode: 'daily', day, 'players.userId': userId })
+    .lean<MatchRecord>()
+    .exec();
+
+  return doc ? plain(doc) : null;
+}
+
+export async function dailyBoard(day = todayKey(), limit = 20): Promise<DailyEntry[]> {
+  if (!(await connect())) return [];
+
+  const docs = await MatchModel.find({ mode: 'daily', day })
+    .limit(200)
+    .lean<MatchRecord[]>()
+    .exec();
+
+  const ids = docs.map((doc) => doc.players[0]?.userId).filter(Boolean);
+  const cards = await playersByIds(ids);
+  const byId = new Map(cards.map((card) => [card.userId, card]));
+
+  const rows: DailyEntry[] = docs.map((doc) => {
+    const board = doc.rounds?.[0]?.boards?.[0];
+    const card = byId.get(doc.players[0]?.userId ?? '');
+
+    return {
+      userId: doc.players[0]?.userId ?? '',
+      displayName: card?.displayName ?? 'player',
+      avatar: card?.avatar ?? 'ember',
+      guesses: board?.words.length ?? 0,
+      solved: Boolean(board?.solved),
+      ms: board?.solveMs ?? null,
+    };
+  });
+
+  return rows
+    .sort((a, b) => {
+      if (a.solved !== b.solved) return a.solved ? -1 : 1;
+      if (a.guesses !== b.guesses) return a.guesses - b.guesses;
+      return (a.ms ?? Infinity) - (b.ms ?? Infinity);
+    })
+    .slice(0, limit);
+}
+
+export async function dailyCount(day = todayKey()) {
+  if (!(await connect())) return { played: 0, solved: 0 };
+
+  const [played, solved] = await Promise.all([
+    MatchModel.countDocuments({ mode: 'daily', day }).exec(),
+    MatchModel.countDocuments({ mode: 'daily', day, 'rounds.boards.solved': true }).exec(),
+  ]);
+
+  return { played, solved };
 }

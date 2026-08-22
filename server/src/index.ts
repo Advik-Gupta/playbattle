@@ -15,6 +15,7 @@ import type {
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
 import { checkEnv } from './env.js';
+import { dayKey, wordForDay } from './daily.js';
 import { bannedCount, isBanned, pendingWarning, refreshBans, clearWarning } from './bans.js';
 import { bucketCount, httpLimiter, sweepBuckets, take } from './limits.js';
 import {
@@ -46,6 +47,7 @@ import {
   banAndDrop,
   closeRoom,
   createRoom,
+  createDaily,
   createSolo,
   endRound,
   everyoneReady,
@@ -430,6 +432,25 @@ io.on('connection', (socket) => {
     socket.emit('game:roundStart', room.round);
     scheduleCpu(room);
     ack({ ok: true, data: { code: room.code } });
+  });
+
+  socket.on('room:daily', (ack) => {
+    if (!guard('room:solo', ack)) return;
+
+    const current = roomOf(profile.id);
+    if (current && current.config.mode === 'daily' && current.phase !== 'match_over') {
+      return ack({ ok: true, data: { code: current.code, day: dayKey() } });
+    }
+
+    exitCurrent();
+
+    const day = dayKey();
+    const room = createDaily(profile, socket.id, wordForDay(day));
+
+    enterRoom(room.code);
+    push(room);
+    socket.emit('game:roundStart', room.round);
+    ack({ ok: true, data: { code: room.code, day } });
   });
 
   socket.on('game:hint', (ack) => {

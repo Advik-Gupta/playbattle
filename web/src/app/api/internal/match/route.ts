@@ -27,7 +27,8 @@ export async function POST(request: Request) {
   const saved = await recordMatch({
     matchId: body.matchId,
     code: body.code ?? '',
-    mode: body.mode === 'solo' ? 'solo' : 'race',
+    mode: body.mode === 'solo' || body.mode === 'daily' ? body.mode : 'race',
+    day: typeof body.day === 'string' ? body.day : null,
     game: body.game === 'tictactoe' ? 'tictactoe' : 'wordbattle',
     players: body.players,
     winnerId: body.winnerId ?? null,

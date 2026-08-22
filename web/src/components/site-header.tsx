@@ -34,6 +34,7 @@ export async function SiteHeader() {
           {[
             { href: '/play', label: 'Play' },
             { href: '/rooms', label: 'Rooms' },
+            { href: '/daily', label: 'Daily' },
             { href: '/players', label: 'Players' },
             { href: '/dictionary', label: 'Words' },
             { href: '/leaderboard', label: 'Leaderboard' },

@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import {
+  EMPTY_DAILY,
   EMPTY_SOLO,
   EMPTY_STATS,
   displayNameTaken,
@@ -51,6 +52,7 @@ export default async function ProfilePage({
 
   const stats = profile?.stats ?? EMPTY_STATS;
   const solo = profile?.solo ?? EMPTY_SOLO;
+  const daily = profile?.daily ?? EMPTY_DAILY;
   const winRate = stats.played > 0 ? Math.round((stats.won / stats.played) * 100) : 0;
   const avgGuesses = stats.solves > 0 ? (stats.guesses / stats.solves).toFixed(1) : '-';
 
@@ -160,6 +162,16 @@ export default async function ProfilePage({
                 </Card>
               );
             })}
+          </div>
+        </div>
+
+        <div className="mt-10">
+          <h2 className="mb-3 text-lg font-semibold tracking-tight">Daily</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatTile label="Played" value={String(daily.played)} />
+            <StatTile label="Solved" value={String(daily.solves)} />
+            <StatTile label="Streak" value={String(daily.streak)} />
+            <StatTile label="Best" value={String(daily.bestStreak)} />
           </div>
         </div>
 

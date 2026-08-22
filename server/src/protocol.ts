@@ -4,7 +4,7 @@ export type RoomPhase = 'lobby' | 'playing' | 'round_over' | 'match_over';
 
 export const WORD_LENGTH = 5;
 
-export type GameMode = 'race' | 'solo';
+export type GameMode = 'race' | 'solo' | 'daily';
 
 export type GameId = 'wordbattle' | 'tictactoe';
 
@@ -66,6 +66,16 @@ export const TICTACTOE_SOLO_CONFIG: RoomConfig = {
   ...TICTACTOE_CONFIG,
   mode: 'solo',
   maxPlayers: 1,
+};
+
+export const DAILY_CONFIG: RoomConfig = {
+  game: 'wordbattle',
+  mode: 'daily',
+  rounds: 1,
+  secondsPerRound: 0,
+  maxGuesses: 6,
+  maxPlayers: 1,
+  visibility: 'private',
 };
 
 export const MAX_HINTS = 2;
@@ -238,6 +248,7 @@ export type Ack<T> = { ok: true; data: T } | { ok: false; error: string };
 export interface ClientToServerEvents {
   'room:create': (config: Partial<RoomConfig>, ack: (res: Ack<{ code: string }>) => void) => void;
   'room:solo': (config: Partial<RoomConfig>, ack: (res: Ack<{ code: string }>) => void) => void;
+  'room:daily': (ack: (res: Ack<{ code: string; day: string }>) => void) => void;
   'game:hint': (ack: (res: Ack<HintReveal>) => void) => void;
   'presence:watch': (userIds: string[], ack: (res: Ack<PresenceEntry[]>) => void) => void;
   'presence:ping': (ack: (res: Ack<null>) => void) => void;

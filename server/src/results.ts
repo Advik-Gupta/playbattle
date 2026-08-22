@@ -1,4 +1,5 @@
 import type { Room } from './rooms.js';
+import { dayKey } from './daily.js';
 
 export async function reportMatch(room: Room, matchId: string) {
   const webUrl = process.env.WEB_APP_URL ?? 'http://localhost:3000';
@@ -13,6 +14,7 @@ export async function reportMatch(room: Room, matchId: string) {
     matchId,
     code: room.code,
     mode: room.config.mode,
+    day: room.config.mode === 'daily' ? dayKey() : null,
     game: room.config.game,
     players: [...room.players.values()].map((player) => ({
       userId: player.profile.id,
