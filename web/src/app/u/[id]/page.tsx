@@ -10,7 +10,10 @@ import {
   requestFriend,
   respondToRequest,
 } from '@/lib/db';
+import { describe } from '@/lib/achievements';
+import { vocabTotal } from '@/lib/db';
 import { GAME_LIST } from '@/components/games/registry';
+import { BadgeRow } from '@/components/badge-grid';
 import { Avatar } from '@/components/avatar';
 import { Bars, FormRow } from '@/components/charts/bars';
 import { Donut } from '@/components/charts/donut';
@@ -31,10 +34,17 @@ export default async function PublicProfile({ params }: { params: Promise<{ id: 
   const profile = await publicProfile(id);
   if (!profile) notFound();
 
-  const [series, relation] = await Promise.all([
+  const [series, relation, words] = await Promise.all([
     profileSeries(id, 20),
     friendState(viewerId, id),
+    vocabTotal(id),
   ]);
+
+  const badges = describe(
+    profile,
+    words,
+    (profile.achievements ?? []).map((entry) => ({ id: entry.id, at: String(entry.at) })),
+  );
 
   const stats = { ...EMPTY_STATS, ...profile.stats };
   const solo = { ...EMPTY_SOLO, ...profile.solo };
@@ -98,6 +108,13 @@ export default async function PublicProfile({ params }: { params: Promise<{ id: 
           <StatTile label="Wins" value={String(stats.won)} />
           <StatTile label="Win rate" value={`${winRate}%`} />
           <StatTile label="Best streak" value={String(stats.bestStreak)} />
+        </div>
+
+        <div className="mt-6">
+          <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Badges
+          </h2>
+          <BadgeRow badges={badges} />
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2">

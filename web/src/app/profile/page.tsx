@@ -13,7 +13,10 @@ import {
   saveProfile,
 } from '@/lib/db';
 import { DEFAULT_AVATAR, isAvatarId } from '@/lib/avatars';
+import { describe } from '@/lib/achievements';
+import { vocabTotal } from '@/lib/db';
 import { GAME_LIST } from '@/components/games/registry';
+import { BadgeGrid } from '@/components/badge-grid';
 import { Avatar } from '@/components/avatar';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { NotifyToggle } from '@/components/notify-prompt';
@@ -44,11 +47,19 @@ export default async function ProfilePage({
   const userId = session.user.id;
   const params = await searchParams;
 
-  const [profile, matches, series] = await Promise.all([
+  const [profile, matches, series, words] = await Promise.all([
     getProfile(userId),
     recentMatches(userId, 5),
     profileSeries(userId, 20),
+    vocabTotal(userId),
   ]);
+
+  const badges = profile
+    ? describe(profile, words, (profile.achievements ?? []).map((entry) => ({
+        id: entry.id,
+        at: String(entry.at),
+      })))
+    : [];
 
   const stats = profile?.stats ?? EMPTY_STATS;
   const solo = profile?.solo ?? EMPTY_SOLO;
@@ -136,6 +147,11 @@ export default async function ProfilePage({
               )}
             </div>
           </div>
+        </div>
+
+        <div className="mt-10">
+          <h2 className="mb-3 text-lg font-semibold tracking-tight">Badges</h2>
+          <BadgeGrid badges={badges} />
         </div>
 
         <div className="mt-10">

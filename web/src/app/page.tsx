@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { databaseReady, friendList, getProfile, hasDatabase } from '@/lib/db';
 import { setWordStatus, vocabCounts, wordToReview } from '@/lib/vocab';
-import { acknowledgeNotices, myNotices } from '@/lib/db';
+import { acknowledgeNotices, markAchievementsSeen, myNotices, unseenAchievements, vocabTotal } from '@/lib/db';
+import { describe } from '@/lib/achievements';
 import { SiteHeader } from '@/components/site-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,6 +13,7 @@ import { MobileNav } from '@/components/mobile-nav';
 import { GAME_LIST } from '@/components/games/registry';
 import { WordReview } from '@/components/word-review';
 import { NoticeDialog } from '@/components/notice-dialog';
+import { BadgePopup } from '@/components/badge-popup';
 
 export default async function Home() {
   const session = await auth();
@@ -22,14 +24,21 @@ export default async function Home() {
   if (online && !profile?.displayName) redirect('/onboarding');
 
   const userId = session.user.id;
-  const [friends, words, review, notices] = online
+  const [friends, words, review, notices, fresh, wordTotal] = online
     ? await Promise.all([
         friendList(userId),
         vocabCounts(userId),
         wordToReview(userId),
         myNotices(userId),
+        unseenAchievements(userId),
+        vocabTotal(userId),
       ])
-    : [[], { total: 0, learning: 0, known: 0 }, null, []];
+    : [[], { total: 0, learning: 0, known: 0 }, null, [], [], 0];
+
+  const unlocked =
+    profile && fresh.length > 0
+      ? describe(profile, wordTotal, []).filter((badge) => fresh.includes(badge.id))
+      : [];
 
   async function noop() {
     'use server';
@@ -38,6 +47,11 @@ export default async function Home() {
   async function acknowledge() {
     'use server';
     await acknowledgeNotices(userId);
+  }
+
+  async function seenBadges() {
+    'use server';
+    await markAchievementsSeen(userId);
   }
 
   async function markKnown(formData: FormData) {
@@ -59,6 +73,7 @@ export default async function Home() {
         }))}
         acknowledgeAction={acknowledge}
       />
+      <BadgePopup badges={unlocked} acknowledgeAction={seenBadges} />
       <WordReview word={review} markKnown={markKnown} />
 
       <main className="container py-10">

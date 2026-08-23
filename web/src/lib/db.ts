@@ -102,6 +102,7 @@ export interface Profile {
   solo: SoloStats;
   daily: DailyStats;
   games?: Record<GameKey, GameTally>;
+  achievements?: { id: string; at: string; seen: boolean }[];
   banned?: boolean;
   createdAt?: Date;
 }
@@ -161,6 +162,14 @@ const userSchema = new Schema(
       points: { type: Number, default: 0 },
     },
     banned: { type: Boolean, default: false },
+    achievements: [
+      {
+        _id: false,
+        id: { type: String, required: true },
+        at: { type: Date, default: Date.now },
+        seen: { type: Boolean, default: false },
+      },
+    ],
     games: {
       wordbattle: { played: { type: Number, default: 0 }, won: { type: Number, default: 0 } },
       tictactoe: { played: { type: Number, default: 0 }, won: { type: Number, default: 0 } },
@@ -272,7 +281,7 @@ function plain<T>(doc: T): T {
   return JSON.parse(JSON.stringify(doc)) as T;
 }
 
-export const getProfile = cache(async (userId: string): Promise<Profile | null> => {
+export async function readProfile(userId: string): Promise<Profile | null> {
   if (!(await connect())) return null;
 
   const doc = await UserModel.findOne({ userId }).lean<Profile>().exec();
@@ -282,8 +291,11 @@ export const getProfile = cache(async (userId: string): Promise<Profile | null> 
   profile.stats = { ...EMPTY_STATS, ...(profile.stats ?? {}) };
   profile.solo = { ...EMPTY_SOLO, ...(profile.solo ?? {}) };
   profile.daily = { ...EMPTY_DAILY, ...(profile.daily ?? {}) };
+  profile.achievements = profile.achievements ?? [];
   return profile;
-});
+}
+
+export const getProfile = cache(readProfile);
 
 export async function saveProfile(
   userId: string,
@@ -1212,4 +1224,53 @@ export async function dailyCount(day = todayKey()) {
   ]);
 
   return { played, solved };
+}
+
+export async function vocabTotal(userId: string): Promise<number> {
+  if (!(await connect())) return 0;
+  return mongoose.connection.collection('vocab').countDocuments({ userId });
+}
+
+export async function grantAchievements(userId: string): Promise<string[]> {
+  const profile = await readProfile(userId);
+  if (!profile) return [];
+
+  const { newlyEarned } = await import('@/lib/achievements');
+  const words = await vocabTotal(userId);
+  const already = (profile.achievements ?? []).map((entry) => entry.id);
+  const fresh = newlyEarned(profile, words, already);
+
+  if (fresh.length === 0) return [];
+
+  await UserModel.updateOne(
+    { userId },
+    {
+      $push: {
+        achievements: {
+          $each: fresh.map((id) => ({ id, at: new Date(), seen: false })),
+        },
+      },
+    },
+  ).exec();
+
+  return fresh;
+}
+
+export async function unseenAchievements(userId: string) {
+  const profile = await readProfile(userId);
+  if (!profile) return [];
+
+  return (profile.achievements ?? []).filter((entry) => !entry.seen).map((entry) => entry.id);
+}
+
+export async function markAchievementsSeen(userId: string) {
+  if (!(await connect())) return false;
+
+  await UserModel.updateOne(
+    { userId },
+    { $set: { 'achievements.$[entry].seen': true } },
+    { arrayFilters: [{ 'entry.seen': false }] },
+  ).exec();
+
+  return true;
 }

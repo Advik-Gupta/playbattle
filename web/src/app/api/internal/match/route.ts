@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { hasDatabase, recordMatch, type MatchInput } from '@/lib/db';
 import { recordWord } from '@/lib/vocab';
+import { grantAchievements } from '@/lib/db';
 
 const secret = process.env.INTERNAL_API_SECRET;
 
@@ -45,6 +46,10 @@ export async function POST(request: Request) {
       if (!board?.playerId) continue;
       await recordWord(board.playerId, round.answer, Boolean(board.solved));
     }
+  }
+
+  for (const player of body.players ?? []) {
+    if (player?.userId) await grantAchievements(player.userId);
   }
 
   return NextResponse.json({ ok: true });
