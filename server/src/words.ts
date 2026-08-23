@@ -1,4 +1,6 @@
-export const WORDS = [
+import { ALLOWED_GUESSES } from './allowed-words.js';
+
+export const ANSWERS = [
   'about', 'above', 'abuse', 'actor', 'acute', 'admit', 'adopt', 'adult', 'after', 'again',
   'agent', 'agree', 'ahead', 'alarm', 'album', 'alert', 'alike', 'alive', 'allow', 'alone',
   'along', 'alter', 'among', 'anger', 'angle', 'angry', 'apart', 'apple', 'apply', 'arena',
@@ -51,14 +53,25 @@ export const WORDS = [
   'young', 'youth',
 ];
 
-const lookup = new Set(WORDS);
+export const WORDS = ANSWERS;
+
+const answers = new Set(ANSWERS);
+const allowed = new Set([...ALLOWED_GUESSES, ...ANSWERS]);
 
 export function isWord(word: string) {
-  return lookup.has(word.toLowerCase());
+  return allowed.has(word.toLowerCase());
+}
+
+export function isAnswer(word: string) {
+  return answers.has(word.toLowerCase());
+}
+
+export function guessCount() {
+  return allowed.size;
 }
 
 export function randomWord(exclude: string[] = []) {
-  const pool = WORDS.filter((word) => !exclude.includes(word));
-  const list = pool.length > 0 ? pool : WORDS;
+  const pool = ANSWERS.filter((word) => !exclude.includes(word));
+  const list = pool.length > 0 ? pool : ANSWERS;
   return list[Math.floor(Math.random() * list.length)];
 }

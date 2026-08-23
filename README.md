@@ -13,13 +13,23 @@ multiplayer games in the browser. next.js on the front, socket.io server for the
 
 - google login, display names, preset avatars
 - rooms with codes, public room browser, quick match queues per game
+- private rooms where people knock and the host lets them in
+- spectating: watch any open room, chat along, letters stay hidden until the round ends
 - live chat with a profanity filter, rate limits and no answer spoilers mid round
 - friends, presence, and game invites that reach you anywhere on the site
-- votekick, host removal and per room bans
-- stats, match history, per game leaderboards, public profiles
+- votekick, host removal, per room bans, warnings and timed bans
+- stats, match history with round by round boards, per game leaderboards, public profiles
+- badges with progress tracking
 - a personal word list that fills up as you play, with definitions
+- rejoin your game after a refresh, nothing is lost
 - dark mode, mobile layout, installable as a pwa
-- admin panel at /admin behind a code
+- admin panel at /admin behind a code, with analytics, live rooms and moderation
+
+## words
+
+the guess list is 8,518 five letter words pulled from the system dictionary. answers come from a
+smaller curated list of 492 common words, so you can guess anything real but never get something
+obscure as the answer. anagram rush has its own list of 3 to 7 letter words.
 
 ## running it
 
@@ -77,4 +87,4 @@ web/      next.js app, ui, database access
 server/   express + socket.io game server
 ```
 
-both live in one npm workspace, so `npm run dev` starts them together. games are split per folder on both sides (`server/src/games`, `web/src/components/games`) so adding another one does not touch the room plumbing.
+both live in one npm workspace, so `npm run dev` starts them together. games are split per folder on both sides (`server/src/games`, `web/src/components/games`) so adding another one does not touch the room plumbing. a game module says how a round starts, when it is over, and how to summarise it, and the room code handles everything else.

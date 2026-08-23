@@ -15,6 +15,7 @@ import type {
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
 import { checkEnv } from './env.js';
+import { guessCount } from './words.js';
 import { dayKey, wordForDay } from './daily.js';
 import { bannedCount, isBanned, pendingWarning, refreshBans, clearWarning } from './bans.js';
 import { bucketCount, httpLimiter, sweepBuckets, take } from './limits.js';
@@ -63,8 +64,12 @@ import {
   markDisconnected,
   queueSize,
   reapAbsent,
+  forgetWatcher,
   reseat,
   roomOf,
+  unwatchRoom,
+  watchRoom,
+  watcherIds,
   removePlayer,
   resign,
   respondToJoin,
@@ -124,6 +129,7 @@ app.get('/health', (_req, res) => {
     queue: queueSize(),
     banned: bannedCount(),
     buckets: bucketCount(),
+    dictionary: guessCount(),
   });
 });
 
@@ -269,6 +275,7 @@ io.use(async (socket, next) => {
 
   socket.data.profile = profile;
   socket.data.roomCode = null;
+  socket.data.watching = null;
   next();
 });
 
@@ -286,8 +293,15 @@ function announcePresence(userId: string) {
 
 function push(room: Room | null) {
   if (!room) return;
+
   for (const { socketId, userId } of playerSockets(room)) {
     io.to(socketId).emit('room:state', serialize(room, userId));
+  }
+
+  for (const watcherId of watcherIds(room)) {
+    for (const socketId of socketsFor(watcherId)) {
+      io.to(socketId).emit('room:state', serialize(room, watcherId));
+    }
   }
 }
 
@@ -391,6 +405,14 @@ io.on('connection', (socket) => {
   };
 
   const exitCurrent = () => {
+    const watching = socket.data.watching;
+    if (watching) {
+      const watched = unwatchRoom(watching, profile.id);
+      socket.leave(watching);
+      socket.data.watching = null;
+      push(watched);
+    }
+
     const code = socket.data.roomCode;
     if (!code) return;
 
@@ -685,6 +707,44 @@ io.on('connection', (socket) => {
     ack({ ok: true, data: null });
   });
 
+  socket.on('room:watch', (code, ack) => {
+    if (!guard('room:join', ack)) return;
+
+    const wanted = String(code ?? '').trim().toUpperCase();
+    const target = getRoom(wanted);
+
+    if (!target) return ack({ ok: false, error: 'room not found' });
+    if (target.players.has(profile.id)) {
+      return ack({ ok: false, error: 'you are playing in it' });
+    }
+
+    exitCurrent();
+    forgetWatcher(profile.id);
+
+    const result = watchRoom(wanted, profile.id);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    socket.join(result.room.code);
+    socket.data.watching = result.room.code;
+
+    socket.emit('chat:history', history(result.room.code));
+    push(result.room);
+
+    ack({ ok: true, data: { code: result.room.code } });
+  });
+
+  socket.on('room:unwatch', (ack) => {
+    const code = socket.data.watching;
+    if (!code) return ack({ ok: true, data: null });
+
+    const room = unwatchRoom(code, profile.id);
+    socket.leave(code);
+    socket.data.watching = null;
+    push(room);
+
+    ack({ ok: true, data: null });
+  });
+
   socket.on('room:respondJoin', (payload, ack) => {
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
@@ -724,7 +784,7 @@ io.on('connection', (socket) => {
 
     const room = getRoom(code);
     if (!room) return ack({ ok: false, error: 'room not found' });
-    if (room.config.mode === 'solo') return ack({ ok: false, error: 'solo games are private' });
+    if (room.config.mode !== 'race') return ack({ ok: false, error: 'that game is private' });
     if (room.players.size >= room.config.maxPlayers) {
       return ack({ ok: false, error: 'room is full' });
     }
@@ -749,7 +809,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat:send', (text, ack) => {
-    const code = socket.data.roomCode;
+    const code = socket.data.roomCode ?? socket.data.watching;
     if (!code) return ack({ ok: false, error: 'not in a room' });
 
     const body = clean(text);
@@ -780,6 +840,12 @@ io.on('connection', (socket) => {
 
     presenceDisconnected(profile.id, socket.id);
     leaveQueue(profile.id);
+
+    if (socket.data.watching) {
+      const watched = unwatchRoom(socket.data.watching, profile.id);
+      socket.data.watching = null;
+      push(watched);
+    }
 
     const pendingIn = socket.data.roomCode;
     if (pendingIn) dropJoinRequest(pendingIn, profile.id);

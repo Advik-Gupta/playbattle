@@ -77,6 +77,7 @@ export interface Room {
   banned: Set<string>;
   joinRequests: JoinRequest[];
   invited: Set<string>;
+  watchers: Set<string>;
 }
 
 export type RoomResult =
@@ -213,6 +214,7 @@ export function createRoom(profile: PlayerProfile, socketId: string, config: Par
     banned: new Set<string>(),
     joinRequests: [],
     invited: new Set<string>(),
+    watchers: new Set<string>(),
   };
 
   room.players.set(profile.id, blankPlayer(profile, socketId));
@@ -355,6 +357,7 @@ export function openRooms(): OpenRoom[] {
 
 export function serialize(room: Room, viewerId: string): RoomState {
   const viewer = room.players.get(viewerId);
+  const spectating = !viewer && room.watchers.has(viewerId);
   const roundDone = room.phase === 'round_over' || room.phase === 'match_over';
   const viewerFinished =
     viewer !== undefined &&
@@ -368,7 +371,7 @@ export function serialize(room: Room, viewerId: string): RoomState {
       connected: player.socketId !== null,
       ready: player.ready,
       score: player.score,
-      guesses: own || roundDone ? player.guesses : null,
+      guesses: (own || roundDone) && !spectating ? player.guesses : roundDone ? player.guesses : null,
       maskedGuesses: player.guesses.map((guess) => ({ tiles: guess.tiles })),
       keyboard: own ? player.keyboard : null,
       solved: player.solved,
@@ -390,11 +393,13 @@ export function serialize(room: Room, viewerId: string): RoomState {
     deadline: room.deadline,
     now: Date.now(),
     history: room.history,
-    answer: roundDone || viewerFinished ? room.answer : null,
+    answer: roundDone || (viewerFinished && !spectating) ? room.answer : null,
     matchWinnerId: room.matchWinnerId,
     matchDraw: room.matchDraw,
     votekicks: room.votekicks,
     joinRequests: room.hostId === viewerId ? room.joinRequests : [],
+    watchers: room.watchers.size,
+    spectating,
     ttt: room.ttt,
     anagram: serializeAnagram(room, viewerId),
   };
@@ -853,4 +858,34 @@ export function dropJoinRequest(code: string, userId: string) {
   if (!room) return;
 
   room.joinRequests = room.joinRequests.filter((entry) => entry.userId !== userId);
+}
+
+export function watchRoom(code: string, userId: string) {
+  const room = getRoom(code);
+  if (!room) return { ok: false, error: 'room not found' } as const;
+  if (room.players.has(userId)) return { ok: false, error: 'you are playing in it' } as const;
+  if (room.config.mode === 'solo' || room.config.mode === 'daily') {
+    return { ok: false, error: 'that game is private' } as const;
+  }
+  if (room.banned.has(userId)) return { ok: false, error: 'you were removed from this room' } as const;
+  if (room.watchers.size >= 20) return { ok: false, error: 'too many people watching' } as const;
+
+  room.watchers.add(userId);
+  return { ok: true, room } as const;
+}
+
+export function unwatchRoom(code: string, userId: string) {
+  const room = getRoom(code);
+  if (!room) return null;
+
+  room.watchers.delete(userId);
+  return room;
+}
+
+export function watcherIds(room: Room) {
+  return [...room.watchers];
+}
+
+export function forgetWatcher(userId: string) {
+  for (const room of rooms.values()) room.watchers.delete(userId);
 }

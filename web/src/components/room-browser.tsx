@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { OpenRoom } from '@/lib/protocol';
 import { useSocket } from '@/lib/socket';
 import { gameMeta } from '@/components/games/registry';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -103,6 +104,9 @@ export function RoomBrowser() {
               </span>
               <Button size="sm" variant="outline" onClick={() => join(room.code)}>
                 Join
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <Link href={`/watch/${room.code}`}>Watch</Link>
               </Button>
             </div>
           </CardContent>

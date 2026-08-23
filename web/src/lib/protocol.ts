@@ -202,6 +202,8 @@ export interface RoomState {
   matchDraw: boolean;
   votekicks: VoteKick[];
   joinRequests: JoinRequest[];
+  watchers: number;
+  spectating: boolean;
   ttt: TicTacToeState | null;
   anagram: AnagramState | null;
 }
@@ -295,6 +297,8 @@ export interface ClientToServerEvents {
     code: string,
     ack: (res: Ack<{ code: string; pending?: boolean }>) => void,
   ) => void;
+  'room:watch': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
+  'room:unwatch': (ack: (res: Ack<null>) => void) => void;
   'room:respondJoin': (
     payload: { userId: string; accept: boolean },
     ack: (res: Ack<null>) => void,
@@ -330,4 +334,5 @@ export interface ServerToClientEvents {
 export interface SocketData {
   profile: PlayerProfile | null;
   roomCode: string | null;
+  watching: string | null;
 }
