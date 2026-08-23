@@ -131,6 +131,20 @@ export default async function Home() {
             </CardContent>
           </Card>
 
+          <Card className="mb-4">
+            <CardContent className="flex items-center justify-between gap-4 p-6">
+              <div>
+                <p className="font-semibold tracking-tight">Tournaments</p>
+                <p className="text-sm text-muted-foreground">
+                  Four or eight players, one winner.
+                </p>
+              </div>
+              <Button asChild variant="outline">
+                <Link href="/tournaments">Open</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="flex items-center justify-between gap-4 p-6">
               <div>

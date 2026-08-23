@@ -14,6 +14,7 @@ multiplayer games in the browser. next.js on the front, socket.io server for the
 - google login, display names, preset avatars
 - rooms with codes, public room browser, quick match queues per game
 - private rooms where people knock and the host lets them in
+- tournaments: four or eight player single elimination brackets for any game
 - spectating: watch any open room, chat along, letters stay hidden until the round ends
 - live chat with a profanity filter, rate limits and no answer spoilers mid round
 - friends, presence, and game invites that reach you anywhere on the site

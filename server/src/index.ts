@@ -15,6 +15,23 @@ import type {
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
 import { checkEnv } from './env.js';
+import {
+  attachRoom,
+  createTournament,
+  getTournament,
+  joinTournament,
+  leaveTournament,
+  matchForRoom,
+  memberIds,
+  pendingMatches,
+  reportWinner,
+  serializeTournament,
+  startTournament,
+  sweepTournaments,
+  tournamentCount,
+  tournamentOf,
+  type Tournament,
+} from './tournaments.js';
 import { guessCount } from './words.js';
 import { dayKey, wordForDay } from './daily.js';
 import { bannedCount, isBanned, pendingWarning, refreshBans, clearWarning } from './bans.js';
@@ -46,6 +63,7 @@ import {
 import {
   allRoomCodes,
   banAndDrop,
+  blankSeat,
   closeRoom,
   createRoom,
   createDaily,
@@ -130,6 +148,7 @@ app.get('/health', (_req, res) => {
     banned: bannedCount(),
     buckets: bucketCount(),
     dictionary: guessCount(),
+    tournaments: tournamentCount(),
   });
 });
 
@@ -305,6 +324,61 @@ function push(room: Room | null) {
   }
 }
 
+function pushTournament(tournament: Tournament | null) {
+  if (!tournament) return;
+
+  const state = serializeTournament(tournament);
+
+  for (const userId of memberIds(tournament)) {
+    for (const socketId of socketsFor(userId)) {
+      io.to(socketId).emit('tournament:state', state);
+    }
+  }
+
+  io.to(`t:${tournament.code}`).emit('tournament:state', state);
+}
+
+function openTournamentMatches(tournament: Tournament) {
+  for (const match of pendingMatches(tournament)) {
+    const [left, right] = match.seats;
+    if (!left?.userId || !right?.userId) continue;
+
+    const hostProfile = { id: left.userId, name: left.name, avatar: left.avatar };
+    const hostSocket = socketsFor(left.userId)[0] ?? '';
+    const room = createRoom(hostProfile, hostSocket, {
+      game: tournament.game,
+      mode: 'race',
+      rounds: 1,
+      maxPlayers: 2,
+      visibility: 'private',
+    });
+
+    room.players.set(right.userId, blankSeat(room, right));
+    allowJoin(room.code, left.userId);
+    allowJoin(room.code, right.userId);
+    attachRoom(tournament.code, match.id, room.code);
+
+    for (const seat of [left, right]) {
+      if (!seat.userId) continue;
+
+      for (const socketId of socketsFor(seat.userId)) {
+        const target = io.sockets.sockets.get(socketId);
+        if (!target) continue;
+
+        target.join(room.code);
+        target.data.roomCode = room.code;
+        reseat(room, seat.userId, socketId);
+        setRoom(seat.userId, room.code);
+        announcePresence(seat.userId);
+        target.emit('queue:matched', room.code);
+        target.emit('chat:history', history(room.code));
+      }
+    }
+
+    push(room);
+  }
+}
+
 function maybeStart(room: Room) {
   if (room.phase !== 'lobby' || !everyoneReady(room)) return;
 
@@ -337,6 +411,16 @@ function finishRound(room: Room) {
       io.to(socketId).emit('game:matchEnd', serialize(room, userId));
     }
     void reportMatch(room, room.matchId);
+
+    if (matchForRoom(room.code)) {
+      const tournament = reportWinner(room.code, room.matchWinnerId);
+
+      if (tournament) {
+        openTournamentMatches(tournament);
+        pushTournament(tournament);
+      }
+    }
+
     return;
   }
 
@@ -745,6 +829,67 @@ io.on('connection', (socket) => {
     ack({ ok: true, data: null });
   });
 
+  socket.on('tournament:create', (payload, ack) => {
+    if (!guard('room:create', ack)) return;
+
+    const existing = tournamentOf(profile.id);
+    if (existing) leaveTournament(existing.code, profile.id);
+
+    const game = payload?.game === 'tictactoe' || payload?.game === 'anagram'
+      ? payload.game
+      : 'wordbattle';
+    const size = payload?.size === 8 ? 8 : 4;
+
+    const tournament = createTournament(profile, game, size);
+    socket.join(`t:${tournament.code}`);
+    pushTournament(tournament);
+
+    ack({ ok: true, data: { code: tournament.code } });
+  });
+
+  socket.on('tournament:join', (code, ack) => {
+    if (!guard('room:join', ack)) return;
+
+    const result = joinTournament(String(code ?? '').trim().toUpperCase(), profile);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    socket.join(`t:${result.tournament.code}`);
+    pushTournament(result.tournament);
+
+    ack({ ok: true, data: { code: result.tournament.code } });
+  });
+
+  socket.on('tournament:leave', (ack) => {
+    const current = tournamentOf(profile.id);
+    if (!current) return ack({ ok: true, data: null });
+
+    socket.leave(`t:${current.code}`);
+    pushTournament(leaveTournament(current.code, profile.id));
+
+    ack({ ok: true, data: null });
+  });
+
+  socket.on('tournament:watch', (code, ack) => {
+    const tournament = getTournament(String(code ?? '').trim().toUpperCase());
+    if (!tournament) return ack({ ok: false, error: 'tournament not found' });
+
+    socket.join(`t:${tournament.code}`);
+    ack({ ok: true, data: serializeTournament(tournament) });
+  });
+
+  socket.on('tournament:start', (ack) => {
+    const current = tournamentOf(profile.id);
+    if (!current) return ack({ ok: false, error: 'not in a tournament' });
+
+    const result = startTournament(current.code, profile.id);
+    if (!result.ok) return ack({ ok: false, error: result.error });
+
+    openTournamentMatches(result.tournament);
+    pushTournament(result.tournament);
+
+    ack({ ok: true, data: null });
+  });
+
   socket.on('room:respondJoin', (payload, ack) => {
     const code = socket.data.roomCode;
     if (!code) return ack({ ok: false, error: 'not in a room' });
@@ -892,6 +1037,11 @@ setInterval(() => {
   sweepChatRates();
   sweepPresence();
   sweepBuckets();
+
+  for (const code of sweepTournaments()) {
+    io.to(`t:${code}`).emit('tournament:closed', 'tournament closed after sitting idle');
+    console.log('closed idle tournament', code);
+  }
 }, 60_000);
 
 const httpServer = server.listen(port, () => {

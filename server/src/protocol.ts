@@ -208,6 +208,37 @@ export interface RoomState {
   anagram: AnagramState | null;
 }
 
+export type TournamentPhase = 'lobby' | 'running' | 'finished';
+
+export interface BracketSeat {
+  userId: string | null;
+  name: string;
+  avatar: string;
+}
+
+export interface BracketMatch {
+  id: string;
+  round: number;
+  slot: number;
+  seats: [BracketSeat | null, BracketSeat | null];
+  winnerId: string | null;
+  roomCode: string | null;
+  done: boolean;
+}
+
+export interface TournamentState {
+  code: string;
+  hostId: string;
+  game: GameId;
+  size: number;
+  phase: TournamentPhase;
+  players: BracketSeat[];
+  rounds: BracketMatch[][];
+  championId: string | null;
+}
+
+export const TOURNAMENT_SIZES = [4, 8] as const;
+
 export interface JoinRequest {
   userId: string;
   name: string;
@@ -298,6 +329,14 @@ export interface ClientToServerEvents {
     ack: (res: Ack<{ code: string; pending?: boolean }>) => void,
   ) => void;
   'room:watch': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
+  'tournament:create': (
+    payload: { game: GameId; size: number },
+    ack: (res: Ack<{ code: string }>) => void,
+  ) => void;
+  'tournament:join': (code: string, ack: (res: Ack<{ code: string }>) => void) => void;
+  'tournament:leave': (ack: (res: Ack<null>) => void) => void;
+  'tournament:start': (ack: (res: Ack<null>) => void) => void;
+  'tournament:watch': (code: string, ack: (res: Ack<TournamentState>) => void) => void;
   'room:unwatch': (ack: (res: Ack<null>) => void) => void;
   'room:respondJoin': (
     payload: { userId: string; accept: boolean },
@@ -328,6 +367,8 @@ export interface ServerToClientEvents {
   'room:joinResponse': (payload: { code: string; accepted: boolean }) => void;
   'sanction:notice': (sanction: Sanction) => void;
   'room:resume': (payload: { code: string; phase: RoomPhase }) => void;
+  'tournament:state': (state: TournamentState) => void;
+  'tournament:closed': (reason: string) => void;
   toast: (payload: { kind: 'info' | 'error' | 'success'; message: string }) => void;
 }
 

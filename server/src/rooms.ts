@@ -830,6 +830,13 @@ export function queueSize() {
   return total;
 }
 
+export function blankSeat(room: Room, seat: { userId: string | null; name: string; avatar: string }) {
+  return blankPlayer(
+    { id: seat.userId ?? '', name: seat.name, avatar: seat.avatar },
+    null,
+  );
+}
+
 export function allowJoin(code: string, userId: string) {
   const room = getRoom(code);
   if (!room) return false;
