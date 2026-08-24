@@ -23,8 +23,8 @@ multiplayer games in the browser. next.js on the front, socket.io server for the
 - badges with progress tracking
 - a personal word list that fills up as you play, with definitions
 - rejoin your game after a refresh, nothing is lost
-- dark mode, mobile layout, installable as a pwa
-- admin panel at /admin behind a code, with analytics, live rooms and moderation
+- dark mode, sound, mobile layout, installable as a pwa
+- admin panel at /admin behind a code, with analytics, alerts, live rooms and moderation
 
 ## words
 
@@ -42,7 +42,9 @@ npm run dev
 
 web on :3000, game server on :4000.
 
-you need a mongodb connection string and google oauth credentials in `.env`. without a database the games still run, but nothing gets saved.
+you need a mongodb connection string and google oauth credentials in `.env`. without a database the
+games still run, but nothing gets saved. without `GAME_JWT_SECRET` the socket server runs open,
+which is fine locally and not fine anywhere else.
 
 ## env
 
@@ -56,25 +58,36 @@ you need a mongodb connection string and google oauth credentials in `.env`. wit
 | `AUTH_TRUST_HOST` | set false to stop auth.js trusting the host header |
 | `GAME_SERVER_PORT` | port for the socket server |
 | `NEXT_PUBLIC_GAME_SERVER_URL` | where the browser reaches the socket server |
-| `WEB_APP_URL` | where the game server reaches the web app |
 | `GAME_SERVER_INTERNAL_URL` | private url for web to server calls, falls back to the public one |
+| `WEB_APP_URL` | where the game server reaches the web app |
 | `CORS_ORIGINS` | comma separated origins allowed to connect |
-| `TRUST_PROXY_HOPS` | set to 1 behind a reverse proxy so rate limits see real client ips |
 | `GAME_JWT_SECRET` | signs the token the browser uses to open its socket, and the calls between the two processes |
 | `ADMIN_CODE` | code for the admin panel |
+| `TRUST_PROXY_HOPS` | optional, defaults to 1 in production so rate limits see real client ips |
+
+## how identity works
+
+the browser never tells the socket server who it is. it asks the web app for a token at
+`/api/game-token`, which reads the session cookie and signs the user id, name and avatar with
+`GAME_JWT_SECRET`. the socket server verifies that signature on connect. the same secret guards the
+two internal endpoints the game server calls to save matches and read sanctions.
 
 ## deploying
 
-there are two processes: the next app and the socket server. both have a dockerfile, and there is a compose file that also brings up mongo.
+two processes: the next app and the socket server. both have a dockerfile, and there is a compose
+file that also brings up mongo.
 
 ```
 cp .env.example .env
 docker compose up --build
 ```
 
-set `NEXT_PUBLIC_GAME_SERVER_URL` to the public url of the socket server before building the web image, since it gets baked into the client bundle. behind a reverse proxy set `TRUST_PROXY_HOPS=1` so rate limits key on real client ips.
+set `NEXT_PUBLIC_GAME_SERVER_URL` to the public url of the socket server before building the web
+image, since it gets baked into the client bundle. behind a reverse proxy the rate limiter reads the
+forwarded ip automatically in production.
 
-the socket server exposes `/health` for metrics and `/ready` for readiness checks. it drains on SIGTERM: connected players get told the server is restarting before sockets close.
+the socket server exposes `/health` for metrics and `/ready` for readiness checks. it drains on
+SIGTERM: connected players get told the server is restarting before sockets close.
 
 running without docker:
 
@@ -91,4 +104,7 @@ web/      next.js app, ui, database access
 server/   express + socket.io game server
 ```
 
-both live in one npm workspace, so `npm run dev` starts them together. games are split per folder on both sides (`server/src/games`, `web/src/components/games`) so adding another one does not touch the room plumbing. a game module says how a round starts, when it is over, and how to summarise it, and the room code handles everything else.
+both live in one npm workspace, so `npm run dev` starts them together. games are split per folder on
+both sides (`server/src/games`, `web/src/components/games`) so adding another one does not touch the
+room plumbing. a game module says how a round starts, when it is over, and how to summarise it, and
+the room code handles everything else.

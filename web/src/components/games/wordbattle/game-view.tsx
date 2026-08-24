@@ -7,6 +7,7 @@ import { Board, MiniBoard } from '@/components/games/wordbattle/board';
 import { Keyboard } from '@/components/games/wordbattle/keyboard';
 import { Button } from '@/components/ui/button';
 import { Confetti } from '@/components/confetti';
+import { play } from '@/lib/sound';
 import { DefinitionCard } from '@/components/definition-card';
 
 function useCountdown(deadline: number | null, serverNow: number) {
@@ -85,10 +86,12 @@ export function WordBattleView({
       if (res.ok) {
         setDraft('');
         setError('');
+        play('submit');
         return;
       }
 
       setError(res.error);
+      play('wrong');
       setShaking(true);
       setTimeout(() => setShaking(false), 450);
     });
@@ -97,6 +100,7 @@ export function WordBattleView({
   const type = useCallback(
     (letter: string) => {
       setError('');
+        play('key');
       setDraft((current) => (current.length >= WORD_LENGTH ? current : current + letter));
     },
     [],
@@ -105,6 +109,11 @@ export function WordBattleView({
   const back = useCallback(() => setDraft((current) => current.slice(0, -1)), []);
 
   const celebrating = room.phase === 'match_over' && room.matchWinnerId === userId;
+
+  useEffect(() => {
+    if (room.phase !== 'match_over') return;
+    play(room.matchWinnerId === userId ? 'win' : 'lose');
+  }, [room.phase, room.matchWinnerId, userId]);
 
   return (
     <div className="space-y-6">

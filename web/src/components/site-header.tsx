@@ -7,6 +7,7 @@ import { Realtime } from '@/components/realtime';
 import { Toaster } from '@/components/toaster';
 import { InviteDialog } from '@/components/invite-dialog';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { SoundToggle } from '@/components/sound-toggle';
 import { Avatar } from '@/components/avatar';
 import { NotifyPrompt } from '@/components/notify-prompt';
 
@@ -54,6 +55,7 @@ export async function SiteHeader() {
         {session?.user && (
           <div className="flex items-center gap-2 sm:gap-4">
             <ConnectionStatus />
+            <SoundToggle />
             <ThemeToggle />
             <UserMenu name={name} avatar={profile?.avatar ?? ''} signOutAction={handleSignOut} />
             <Realtime id={session.user.id} name={name} avatar={profile?.avatar ?? ''} />

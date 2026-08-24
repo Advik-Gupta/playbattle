@@ -6,6 +6,7 @@ import { useSocket, type GameSocket } from '@/lib/socket';
 import { TicTacToeBoard } from '@/components/games/tictactoe/board';
 import { Button } from '@/components/ui/button';
 import { Confetti } from '@/components/confetti';
+import { play as playSound } from '@/lib/sound';
 
 function useCountdown(deadline: number | null, serverNow: number) {
   const [left, setLeft] = useState<number | null>(null);
@@ -63,7 +64,11 @@ export function TicTacToeView({
 
   function play(index: number) {
     socket.emit('game:move', index, (res) => {
-      if (!res.ok) setError(res.error);
+      if (res.ok) playSound('submit');
+      else {
+        setError(res.error);
+        playSound('wrong');
+      }
     });
   }
 
@@ -71,6 +76,11 @@ export function TicTacToeView({
   const showResult = room.phase === 'round_over' || room.phase === 'match_over';
 
   const celebrating = room.phase === 'match_over' && room.matchWinnerId === userId;
+
+  useEffect(() => {
+    if (room.phase !== 'match_over') return;
+    playSound(room.matchWinnerId === userId ? 'win' : 'lose');
+  }, [room.phase, room.matchWinnerId, userId]);
 
   return (
     <div className="space-y-5">

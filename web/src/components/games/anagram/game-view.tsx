@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ANAGRAM_MIN_LENGTH, type RoomState } from '@/lib/protocol';
 import { useSocket, type GameSocket } from '@/lib/socket';
 import { Confetti } from '@/components/confetti';
+import { play } from '@/lib/sound';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -78,9 +79,11 @@ export function AnagramView({
         setDraft('');
         setError('');
         setFlash(`+${res.data.points} ${res.data.word}`);
+        play('correct');
         setTimeout(() => setFlash(''), 1200);
       } else {
         setError(res.error);
+        play('wrong');
       }
     });
   }
@@ -90,6 +93,11 @@ export function AnagramView({
   }
 
   const celebrating = room.phase === 'match_over' && room.matchWinnerId === userId;
+
+  useEffect(() => {
+    if (room.phase !== 'match_over') return;
+    play(room.matchWinnerId === userId ? 'win' : 'lose');
+  }, [room.phase, room.matchWinnerId, userId]);
 
   return (
     <div className="space-y-5">

@@ -476,10 +476,24 @@ export function clampPage(page: number, total: number, size: number) {
   return Math.min(Math.max(1, page), pages);
 }
 
-export async function matchPage(userId: string, page: number, size = 20) {
+export interface HistoryFilter {
+  game?: GameKey | 'all';
+  result?: 'all' | 'won' | 'lost';
+}
+
+export async function matchPage(
+  userId: string,
+  page: number,
+  size = 20,
+  options: HistoryFilter = {},
+) {
   if (!(await connect())) return { matches: [] as MatchRecord[], total: 0, page: 1 };
 
-  const filter = { 'players.userId': userId, mode: 'race' as const };
+  const filter: Record<string, unknown> = { 'players.userId': userId, mode: 'race' };
+
+  if (options.game && options.game !== 'all') filter.game = options.game;
+  if (options.result === 'won') filter.winnerId = userId;
+  if (options.result === 'lost') filter.winnerId = { $nin: [userId, null] };
   const total = await MatchModel.countDocuments(filter).exec();
   const safe = clampPage(page, total, size);
 
