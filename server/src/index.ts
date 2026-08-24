@@ -15,6 +15,7 @@ import type {
 import type { Room } from './rooms.js';
 import { reportMatch } from './results.js';
 import { checkEnv } from './env.js';
+import { authEnforced, identify } from './auth.js';
 import {
   attachRoom,
   createTournament,
@@ -107,6 +108,7 @@ import {
   sweepEmptyRooms,
   timedOut,
 } from './rooms.js';
+import { internalSecret, webUrl } from './secret.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env') });
@@ -123,7 +125,9 @@ const browseLimit = httpLimiter(30, 1);
 
 const app = express();
 
-const proxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+const proxyHops = Number(
+  process.env.TRUST_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? 1 : 0),
+);
 if (proxyHops > 0) app.set('trust proxy', proxyHops);
 app.use(cors({ origin: origins, credentials: true }));
 app.use(express.json());
@@ -162,7 +166,7 @@ app.get('/rooms', (req, res) => {
 });
 
 app.get('/admin/rooms', (req, res) => {
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  const secret = internalSecret();
 
   if (!secret || req.headers['x-internal-secret'] !== secret) {
     res.status(401).json({ error: 'unauthorized' });
@@ -192,7 +196,7 @@ app.get('/admin/rooms', (req, res) => {
 });
 
 app.post('/admin/close', (req, res) => {
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  const secret = internalSecret();
 
   if (!secret || req.headers['x-internal-secret'] !== secret) {
     res.status(401).json({ error: 'unauthorized' });
@@ -215,7 +219,7 @@ app.post('/admin/close', (req, res) => {
 });
 
 app.post('/bans/sync', async (req, res) => {
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  const secret = internalSecret();
 
   if (!secret || req.headers['x-internal-secret'] !== secret) {
     res.status(401).json({ error: 'unauthorized' });
@@ -242,7 +246,7 @@ app.post('/bans/sync', async (req, res) => {
 });
 
 app.post('/announce', (req, res) => {
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  const secret = internalSecret();
 
   if (!secret || req.headers['x-internal-secret'] !== secret) {
     res.status(401).json({ error: 'unauthorized' });
@@ -265,26 +269,15 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, never, SocketD
   cors: { origin: origins, credentials: true },
 });
 
-function readProfile(raw: unknown): PlayerProfile | null {
-  if (!raw || typeof raw !== 'object') return null;
-
-  const { id, name, avatar } = raw as Record<string, unknown>;
-  if (typeof id !== 'string' || id.length === 0) return null;
-
-  return {
-    id,
-    name: typeof name === 'string' && name ? name.slice(0, 20) : 'player',
-    avatar:
-      typeof avatar === 'string' && (AVATAR_IDS as readonly string[]).includes(avatar)
-        ? avatar
-        : DEFAULT_AVATAR_ID,
-  };
-}
-
 io.use(async (socket, next) => {
-  const profile = readProfile(socket.handshake.auth?.profile);
-  if (!profile) return next(new Error('missing profile'));
+  const result = identify({
+    token: socket.handshake.auth?.token,
+    profile: socket.handshake.auth?.profile,
+  });
 
+  if (!result.ok) return next(new Error(result.error));
+
+  const { profile } = result;
   await refreshBans();
 
   const ban = isBanned(profile.id);
@@ -1046,6 +1039,7 @@ setInterval(() => {
 
 const httpServer = server.listen(port, () => {
   console.log(`server on http://localhost:${port}`);
+  console.log(`auth: ${authEnforced() ? 'signed tokens required' : 'open, set GAME_JWT_SECRET'}`);
 });
 
 function shutdown(signal: string) {

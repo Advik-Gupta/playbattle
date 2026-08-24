@@ -265,7 +265,12 @@ export async function connect(): Promise<boolean> {
   if (mongoose.connection.readyState === 1) return true;
 
   try {
-    cached.mongooseConn ??= mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
+    const dbName = process.env.MONGODB_DB?.trim();
+
+    cached.mongooseConn ??= mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 8000,
+      ...(dbName ? { dbName } : {}),
+    });
     await cached.mongooseConn;
     return true;
   } catch (err) {

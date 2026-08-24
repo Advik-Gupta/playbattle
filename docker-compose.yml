@@ -22,7 +22,7 @@ services:
       GAME_SERVER_PORT: 4000
       WEB_APP_URL: http://web:3000
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      GAME_JWT_SECRET: ${GAME_JWT_SECRET}
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
     ports:
       - "4000:4000"
@@ -48,7 +48,9 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
       NEXT_PUBLIC_GAME_SERVER_URL: ${NEXT_PUBLIC_GAME_SERVER_URL:-http://localhost:4000}
-      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      GAME_JWT_SECRET: ${GAME_JWT_SECRET}
+      GAME_SERVER_INTERNAL_URL: http://server:4000
+      MONGODB_DB: ${MONGODB_DB:-playbattle}
       ADMIN_CODE: ${ADMIN_CODE}
     ports:
       - "3000:3000"

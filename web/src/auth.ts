@@ -17,7 +17,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   session: { strategy: 'jwt', maxAge: 60 * 60 * 24 * 30 },
   pages: { signIn: '/signin' },
-  trustHost: true,
+  trustHost: process.env.AUTH_TRUST_HOST !== 'false',
   callbacks: {
     async jwt({ token, user }) {
       if (user?.id) token.sub = user.id;

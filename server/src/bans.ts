@@ -1,4 +1,5 @@
 import type { Sanction } from './protocol.js';
+import { internalSecret, webUrl } from './secret.js';
 
 interface Enforced {
   reason: string;
@@ -32,15 +33,15 @@ export function clearWarning(userId: string) {
 }
 
 export async function refreshBans(force = false) {
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  const secret = internalSecret();
   if (!secret) return;
   if (!force && Date.now() - lastFetch < REFRESH_MS) return;
 
-  const webUrl = process.env.WEB_APP_URL ?? 'http://localhost:3000';
+
   lastFetch = Date.now();
 
   try {
-    const res = await fetch(`${webUrl}/api/internal/sanctions`, {
+    const res = await fetch(`${webUrl()}/api/internal/sanctions`, {
       headers: { 'x-internal-secret': secret },
     });
 

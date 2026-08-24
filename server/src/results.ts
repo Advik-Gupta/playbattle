@@ -1,12 +1,13 @@
 import type { Room } from './rooms.js';
 import { dayKey } from './daily.js';
+import { internalSecret, webUrl } from './secret.js';
 
 export async function reportMatch(room: Room, matchId: string) {
-  const webUrl = process.env.WEB_APP_URL ?? 'http://localhost:3000';
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+
+  const secret = internalSecret();
 
   if (!secret) {
-    console.warn('INTERNAL_API_SECRET not set, match not saved');
+    console.warn('GAME_JWT_SECRET not set, match not saved');
     return;
   }
 
@@ -39,7 +40,7 @@ export async function reportMatch(room: Room, matchId: string) {
   };
 
   try {
-    const res = await fetch(`${webUrl}/api/internal/match`, {
+    const res = await fetch(`${webUrl()}/api/internal/match`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-internal-secret': secret },
       body: JSON.stringify(payload),

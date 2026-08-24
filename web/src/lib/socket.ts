@@ -29,7 +29,7 @@ interface SocketStore {
   resumed: string | null;
   messages: ChatMessage[];
   toasts: Toast[];
-  connect: (profile: PlayerProfile) => void;
+  connect: (profile: PlayerProfile, token: string | null) => void;
   disconnect: () => void;
   clearRoom: () => void;
   dismiss: (id: number) => void;
@@ -45,7 +45,7 @@ export const useSocket = create<SocketStore>((set, get) => ({
   messages: [],
   toasts: [],
 
-  connect: (profile) => {
+  connect: (profile, token) => {
     if (get().socket) return;
     set({ status: 'connecting' });
 
@@ -53,7 +53,7 @@ export const useSocket = create<SocketStore>((set, get) => ({
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 8,
       reconnectionDelay: 600,
-      auth: { profile },
+      auth: { profile, token },
     });
 
     socket.on('connect', () => set({ status: 'online' }));

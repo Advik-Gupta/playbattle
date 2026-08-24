@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { hasDatabase, recordMatch, type MatchInput } from '@/lib/db';
 import { recordWord } from '@/lib/vocab';
 import { grantAchievements } from '@/lib/db';
-
-const secret = process.env.INTERNAL_API_SECRET;
+import { internalSecret } from '@/lib/game-server';
 
 export async function POST(request: Request) {
+  const secret = internalSecret();
+
   if (!secret || request.headers.get('x-internal-secret') !== secret) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

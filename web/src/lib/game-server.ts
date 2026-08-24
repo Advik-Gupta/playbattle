@@ -1,7 +1,14 @@
-const serverUrl = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? 'http://localhost:4000';
+const serverUrl =
+  process.env.GAME_SERVER_INTERNAL_URL?.trim() ||
+  process.env.NEXT_PUBLIC_GAME_SERVER_URL ||
+  'http://localhost:4000';
+
+export function internalSecret() {
+  return (process.env.GAME_JWT_SECRET ?? process.env.INTERNAL_API_SECRET ?? '').trim();
+}
 
 async function post(path: string, body: unknown) {
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  const secret = internalSecret();
   if (!secret) return null;
 
   try {
@@ -38,7 +45,7 @@ export interface LiveRoom {
 }
 
 export async function liveRooms(): Promise<LiveRoom[] | null> {
-  const secret = process.env.INTERNAL_API_SECRET ?? '';
+  const secret = internalSecret();
   if (!secret) return null;
 
   try {

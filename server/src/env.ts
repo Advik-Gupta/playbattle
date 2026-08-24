@@ -8,7 +8,7 @@ const CHECKS: Check[] = [
   { key: 'GAME_SERVER_PORT', required: false, hint: 'defaults to 4000' },
   { key: 'CORS_ORIGINS', required: false, hint: 'defaults to http://localhost:3000' },
   { key: 'WEB_APP_URL', required: false, hint: 'needed to save match results' },
-  { key: 'INTERNAL_API_SECRET', required: false, hint: 'without it nothing is saved' },
+  { key: 'GAME_JWT_SECRET', required: false, hint: 'sockets run open and nothing is saved' },
 ];
 
 export function checkEnv() {

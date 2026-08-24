@@ -49,15 +49,18 @@ you need a mongodb connection string and google oauth credentials in `.env`. wit
 | key | what it does |
 | --- | --- |
 | `MONGODB_URI` | mongo connection string |
+| `MONGODB_DB` | database name, if it is not already in the uri |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | google oauth app |
 | `AUTH_SECRET` | session signing secret |
 | `AUTH_URL` | base url of the web app |
+| `AUTH_TRUST_HOST` | set false to stop auth.js trusting the host header |
 | `GAME_SERVER_PORT` | port for the socket server |
 | `NEXT_PUBLIC_GAME_SERVER_URL` | where the browser reaches the socket server |
 | `WEB_APP_URL` | where the game server reaches the web app |
+| `GAME_SERVER_INTERNAL_URL` | private url for web to server calls, falls back to the public one |
 | `CORS_ORIGINS` | comma separated origins allowed to connect |
 | `TRUST_PROXY_HOPS` | set to 1 behind a reverse proxy so rate limits see real client ips |
-| `INTERNAL_API_SECRET` | shared secret between the two processes |
+| `GAME_JWT_SECRET` | signs the token the browser uses to open its socket, and the calls between the two processes |
 | `ADMIN_CODE` | code for the admin panel |
 
 ## deploying
